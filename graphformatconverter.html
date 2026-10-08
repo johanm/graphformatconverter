@@ -42,19 +42,20 @@ canvas{display:block;width:100%;height:480px;background:var(--code);border:1px s
 .sec-gap{margin-top:16px}
 .row select{width:auto}
 .by{margin:0 0 6px;color:var(--mute);font-size:15px}.by a{color:var(--acc);font-weight:600}
+.foot{margin:28px 0 8px;padding-top:14px;border-top:1px solid var(--line);color:var(--mute);font-size:14px;text-align:center}.foot a{color:var(--acc);font-weight:600}
 </style>
 </head>
 <body>
 <main>
 <h1>Graph format converter</h1>
 <p class="by">by <a href="https://www.linkedin.com/in/myrberger/" target="_blank" rel="noopener">Johan Myrberger</a></p>
-<p class="sub">GraphML, GEXF, GML, Graphviz DOT, JSON (node-link and Cytoscape.js), edge lists and node/edge CSV (Gephi or Kumu columns). Everything runs in your browser; no file leaves your machine.</p>
+<p class="sub">GraphML, GEXF, GML, Pajek, Graphviz DOT, JSON (node-link and Cytoscape.js), edge lists and node/edge CSV (Gephi or Kumu columns). Everything runs in your browser; no file leaves your machine.</p>
 
 <div class="grid">
 <section>
   <h2>Input</h2>
-  <div class="drop" id="drop" tabindex="0" role="button">Drop files here or click to choose<br><small>One graph file (GraphML, GEXF, GML, DOT, JSON, edge list), or a nodes CSV and an edges CSV together</small></div>
-  <input type="file" id="file" multiple accept=".graphml,.xml,.gexf,.csv,.tsv,.txt,.gml,.dot,.gv,.json,.edges,.edgelist" hidden>
+  <div class="drop" id="drop" tabindex="0" role="button">Drop files here or click to choose<br><small>One graph file (GraphML, GEXF, GML, Pajek, DOT, JSON, edge list), or a nodes CSV and an edges CSV together</small></div>
+  <input type="file" id="file" multiple accept=".graphml,.xml,.gexf,.csv,.tsv,.txt,.gml,.net,.paj,.dot,.gv,.json,.edges,.edgelist" hidden>
   <div id="loaded">Nothing loaded.</div>
   <label for="paste">Or paste GraphML, GEXF or CSV</label>
   <textarea id="paste" rows="5" spellcheck="false" placeholder="Paste content and press Add pasted text"></textarea>
@@ -70,6 +71,7 @@ canvas{display:block;width:100%;height:480px;background:var(--code);border:1px s
     <option value="graphml">GraphML</option>
     <option value="gexf">GEXF 1.3</option>
     <option value="gml">GML</option>
+    <option value="net">Pajek .net</option>
     <option value="dot">Graphviz DOT</option>
     <option value="json">JSON node-link (D3, NetworkX)</option>
     <option value="cyjs">Cytoscape.js JSON</option>
@@ -118,6 +120,7 @@ canvas{display:block;width:100%;height:480px;background:var(--code);border:1px s
 <div id="msgs"></div>
 <div class="row" id="allRow" hidden><button id="dlAll">Download all files</button></div>
 <div id="outs"></div>
+<footer class="foot"><a href="https://github.com/johanm/graphformatconverter" target="_blank" rel="noopener">Source code and documentation on GitHub</a> · by <a href="https://www.linkedin.com/in/myrberger/" target="_blank" rel="noopener">Johan Myrberger</a></footer>
 </main>
 
 <script>
@@ -159,17 +162,19 @@ const toCSV=(head,rows,d)=>[head,...rows].map(r=>csvLine(r,d)).join('\r\n')+'\r\
 function kindOf(t){
   if(/^\s*</.test(t))return'xml';
   if(/^\s*[\[{]/.test(t))return'json';
-  const c=t.replace(/^\s*(#|%|\/\/).*$/gm,'');
-  if(/^\s*(?:strict\s+)?(?:di)?graph\s*[\w".-]*\s*\{/i.test(c))return'dot';
+  if(/(^|\n)\s*\*\s*(vertices|network)\b/i.test(t))return'net';
+  const c=t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*(#|%|\/\/).*$/gm,'');
+  if(/^\s*(?:strict\s+)?(?:di)?graph\s*(?:"[^"]*"|[\w.-]*)\s*\{/i.test(c))return'dot';
   if(/(^|\n)\s*graph\s*\[/i.test(c))return'gml';
-  const l=c.split(/\r?\n/).find(x=>x.trim())||'';
-  if(!/[,;\t]/.test(l)&&/\S\s+\S/.test(l.trim()))return'list';
+  const l=(c.split(/\r?\n/).find(x=>x.trim())||'').trim();
+  if(/^-?\d+[\s,;]+-?\d+(?:[\s,;]|$)/.test(l))return'list';
+  if(!/[,;\t]/.test(l)&&/\S\s+\S/.test(l))return'list';
   return'';
 }
 function ingest(text,name){
   const t=text.replace(/^\uFEFF/,'');
   if(!t.trim())return;
-  baseName=name.replace(/\.[^.]+$/,'')||'graph';
+  baseName=name.replace(/\.[^.]+$/,'').replace(/[-_ .]?(nodes|edges|elements|connections)$/i,'')||'graph';
   const kind=kindOf(t);
   if(kind){S.xml={text:t,name,kind};S.nodes=S.edges=null;return}
   const rows=parseCSV(t,detectDelim(t));
@@ -186,22 +191,33 @@ const dirOf=(v,def)=>{v=(v||'').trim().toLowerCase();return v==='directed'?true:
 
 function parseGraphML(doc){
   const keys={};
-  for(const k of doc.getElementsByTagName('key'))keys[k.getAttribute('id')]={name:k.getAttribute('attr.name')||k.getAttribute('id')};
+  for(const k of doc.getElementsByTagName('key')){const d=k.getElementsByTagName('default')[0];
+    keys[k.getAttribute('id')]={name:k.getAttribute('attr.name')||k.getAttribute('id'),scope:k.getAttribute('for')||'all',def:d?d.textContent.trim():undefined}}
   const g=doc.getElementsByTagName('graph')[0];if(!g)throw Error('No <graph> element found.');
   const def=g.getAttribute('edgedefault')!=='undirected';
-  const data=el=>{const o={};for(const d of el.children)if(d.localName==='data'){const k=keys[d.getAttribute('key')];if(k)o[k.name]=d.textContent.trim()}return o};
+  const data=(el,scope)=>{const o={};
+    for(const d of el.children)if(d.localName==='data'&&!d.children.length){const k=keys[d.getAttribute('key')];if(k)o[k.name]=d.textContent.trim()}
+    for(const k of Object.values(keys))if(k.def!==undefined&&(k.scope===scope||k.scope==='all')&&!(k.name in o))o[k.name]=k.def;
+    return o};
+  // yEd stores labels in nested <y:NodeLabel>/<y:EdgeLabel>
+  const yl=(el,tag)=>{for(const d of el.children)if(d.localName==='data'&&d.children.length){const x=d.getElementsByTagNameNS('*',tag)[0];if(x&&x.textContent.trim())return x.textContent.trim()}return''};
   const nodes=[],edges=[];
-  for(const n of doc.getElementsByTagName('node')){const o=data(n);const id=n.getAttribute('id');nodes.push({id,label:take(o,['label','name'])||id,attrs:o})}
-  for(const e of doc.getElementsByTagName('edge')){const o=data(e);const d=e.getAttribute('directed');
-    edges.push({source:e.getAttribute('source'),target:e.getAttribute('target'),directed:d==null?def:d==='true',label:take(o,['label']),weight:take(o,['weight']),attrs:o})}
+  for(const n of doc.getElementsByTagName('node')){const o=data(n,'node');const id=n.getAttribute('id');nodes.push({id,label:take(o,['label','name'])||yl(n,'NodeLabel')||id,attrs:o})}
+  for(const e of doc.getElementsByTagName('edge')){const o=data(e,'edge');const d=e.getAttribute('directed');
+    edges.push({source:e.getAttribute('source'),target:e.getAttribute('target'),directed:d==null?def:d==='true',label:take(o,['label'])||yl(e,'EdgeLabel'),weight:take(o,['weight']),attrs:o})}
   return{nodes,edges};
 }
 function parseGEXF(doc){
-  const names={};
-  for(const a of doc.getElementsByTagName('attributes')){const c=a.getAttribute('class');for(const x of a.children)names[c+':'+x.getAttribute('id')]=x.getAttribute('title')||x.getAttribute('id')}
+  const names={},defs={};
+  for(const a of doc.getElementsByTagName('attributes')){const c=a.getAttribute('class');
+    for(const x of a.children){const id=x.getAttribute('id'),nm=x.getAttribute('title')||id,d=[...x.children].find(y=>y.localName==='default');
+      names[c+':'+id]=nm;if(d)(defs[c]=defs[c]||{})[nm]=d.textContent}}
   const g=doc.getElementsByTagName('graph')[0];if(!g)throw Error('No <graph> element found.');
-  const def=g.getAttribute('defaultedgetype')!=='undirected';
-  const av=(el,c)=>{const o={};for(const v of el.getElementsByTagName('attvalue')){const f=v.getAttribute('for');o[names[c+':'+f]||f]=v.getAttribute('value')}return o};
+  const def=g.getAttribute('defaultedgetype')==='directed'; // GEXF default is undirected
+  const av=(el,c)=>{const o={};
+    for(const a of el.children)if(a.localName==='attvalues')for(const v of a.children){const f=v.getAttribute('for')??v.getAttribute('id');o[names[c+':'+f]||f]=v.getAttribute('value')}
+    for(const k in defs[c]||{})if(!(k in o))o[k]=defs[c][k];
+    return o};
   const nodes=[],edges=[];
   for(const n of doc.getElementsByTagName('node')){const id=n.getAttribute('id');nodes.push({id,label:n.getAttribute('label')||id,attrs:av(n,'node')})}
   for(const e of doc.getElementsByTagName('edge')){const o=av(e,'edge');const t=e.getAttribute('type');
@@ -252,57 +268,92 @@ function parseJSON(t){
 }
 function parseGML(t){
   t=t.replace(/^\s*#.*$/gm,'');
-  const tok=[...t.matchAll(/"((?:[^"\\]|\\.)*)"|(\[)|(\])|([^\s\[\]"]+)/g)].map(m=>m[2]?'[':m[3]?']':m[1]!==undefined?{s:m[1]}:m[4]);
+  const dec=x=>x.replace(/&#(\d+);/g,(m,n)=>String.fromCharCode(n)).replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+  const tok=[...t.matchAll(/"((?:[^"\\]|\\.)*)"|(\[)|(\])|([^\s\[\]"]+)/g)].map(m=>m[2]?'[':m[3]?']':m[1]!==undefined?{s:dec(m[1])}:m[4]);
   let p=0;
   const list=()=>{const r=[];while(p<tok.length&&tok[p]!==']'){const k=tok[p++];let v=tok[p++];if(v==='['){v=list();p++}else if(v&&v.s!==undefined)v=v.s;r.push([typeof k==='object'?k.s:k,v])}return r};
-  const root=list(),gi=root.find(a=>String(a[0]).toLowerCase()==='graph');
+  const lk=a=>String(a[0]).toLowerCase(),root=list(),gi=root.find(a=>lk(a)==='graph');
   if(!gi)throw Error('No graph block found in GML.');
-  const g=gi[1],get=(l,k)=>{const x=l.find(a=>a[0]===k);return x?x[1]:undefined};
+  const g=gi[1],get=(l,k)=>{const x=l.find(a=>lk(a)===k);return x?x[1]:undefined};
   const def=String(get(g,'directed'))==='1';
-  const flat=(l,skip)=>{const o={};for(const[k,v]of l)if(!skip.includes(k)&&!Array.isArray(v))o[k]=String(v);return o};
-  const nodes=g.filter(a=>a[0]==='node').map(a=>{const id=String(get(a[1],'id')),o=flat(a[1],['id']);return{id,label:take(o,['label','name'])||id,attrs:o}});
-  const edges=g.filter(a=>a[0]==='edge').map(a=>{const l=a[1],o=flat(l,['source','target']);
+  const flat=(l,skip)=>{const o={};for(const a of l)if(!skip.includes(lk(a))&&!Array.isArray(a[1]))o[a[0]]=String(a[1]);return o};
+  const nodes=g.filter(a=>lk(a)==='node').map(a=>{const iv=get(a[1],'id');if(iv===undefined)throw Error('A GML node has no id.');const id=String(iv),o=flat(a[1],['id']);return{id,label:take(o,['label','name'])||id,attrs:o}});
+  const edges=g.filter(a=>lk(a)==='edge').map(a=>{const l=a[1],o=flat(l,['source','target']);
     return{source:String(get(l,'source')),target:String(get(l,'target')),directed:def,label:take(o,['label']),weight:take(o,['weight','value']),attrs:o}});
   return finish(nodes,edges);
 }
 function parseDOT(t){
   t=t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*(#|\/\/).*$/gm,'').replace(/\s\/\/.*$/gm,'');
-  const dg=/^\s*(?:strict\s+)?digraph/i.test(t);
-  const tok=[...t.matchAll(/"((?:[^"\\]|\\.)*)"|(->|--)|([\[\]{}=;,])|((?:(?!->|--)[^\s\[\]{}=;,"])+)/g)].map(m=>m[1]!==undefined?{s:m[1].replace(/\\"/g,'"')}:m[2]||m[3]||m[4]);
-  const idOf=x=>x&&typeof x==='object'?x.s:x;
+  const tok=[...t.matchAll(/"((?:[^"\\]|\\.)*)"|(->|--)|([\[\]{}=;,])|((?:(?!->|--)[^\s\[\]{}=;,"])+)/g)]
+    .map(m=>m[1]!==undefined?{s:m[1].replace(/\\(["\\n])/g,(x,c)=>c==='n'?'\n':c)}:m[2]||m[3]||m[4]);
+  const val=x=>x&&typeof x==='object'?x.s:x;
+  const nm=x=>x&&typeof x==='object'?x.s:String(x).split(':')[0]; // drop ports (a:p1)
+  const isOp=x=>x==='->'||x==='--',isSub=x=>typeof x==='string'&&/^subgraph$/i.test(x);
   let p=tok.indexOf('{')+1;
   const nodes=new Map(),edges=[];
   const addN=id=>{if(!nodes.has(id))nodes.set(id,{id,label:id,attrs:{}});return nodes.get(id)};
   const attrs=()=>{const o={};if(tok[p]!=='[')return o;p++;
-    while(p<tok.length&&tok[p]!==']'){const k=idOf(tok[p++]);if(tok[p]==='='){p++;o[k]=idOf(tok[p++])}if(tok[p]===','||tok[p]===';')p++}
+    while(p<tok.length&&tok[p]!==']'){const k=val(tok[p++]);if(tok[p]==='='){p++;o[k]=val(tok[p++])}if(tok[p]===','||tok[p]===';')p++}
     p++;return o};
+  const group=()=>{ // endpoint: id | {a b} | subgraph [name] {a b}
+    if(isSub(tok[p])){p++;if(tok[p]!=='{')p++}
+    if(tok[p]==='{'){p++;const g=[];while(p<tok.length&&tok[p]!=='}'){const x=tok[p++];if(x===';'||x===',')continue;g.push(nm(x))}p++;return g}
+    return[nm(tok[p++])];
+  };
   while(p<tok.length){
     const x=tok[p];
-    if(x==='}'||x==='{'||x===';'||x===','){p++;continue}
-    if(x==='subgraph'){p++;if(tok[p]!=='{')p++;continue}
-    if((x==='node'||x==='edge'||x==='graph')&&tok[p+1]==='['){p++;attrs();continue}
-    const ch=[idOf(tok[p++])],ops=[];
-    while(tok[p]==='->'||tok[p]==='--'){ops.push(tok[p++]);ch.push(idOf(tok[p++]))}
+    if(x==='}'||x===';'||x===','){p++;continue}
+    if(typeof x==='string'&&/^(node|edge|graph)$/i.test(x)&&tok[p+1]==='['){p++;attrs();continue}
+    if(x==='{'||isSub(x)){ // a subgraph used as an edge endpoint is kept; otherwise its body is flattened
+      let q=p;if(isSub(x)){q++;if(tok[q]!=='{')q++}
+      let d=0,j=q;for(;j<tok.length;j++){if(tok[j]==='{')d++;else if(tok[j]==='}'){d--;if(!d)break}}
+      if(!isOp(tok[j+1])){p=q+1;continue}
+    }
+    const ch=[group()],ops=[];
+    while(isOp(tok[p])){ops.push(tok[p++]);ch.push(group())}
     if(tok[p]==='='&&ch.length===1){p+=2;continue}
     const o=attrs();
-    if(ch.length===1){const n=addN(ch[0]);if(o.label){n.label=o.label}delete o.label;Object.assign(n.attrs,o)}
-    else ch.slice(1).forEach((b,i)=>{addN(ch[i]);addN(b);const oo={...o};
-      edges.push({source:ch[i],target:b,directed:ops[i]==='->',label:take(oo,['label']),weight:take(oo,['weight']),attrs:oo})});
+    if(ch.length===1){for(const id of ch[0]){const n=addN(id);const oo={...o};if(oo.label!==undefined){n.label=oo.label;delete oo.label}Object.assign(n.attrs,oo)}}
+    else for(let i=1;i<ch.length;i++)for(const a of ch[i-1])for(const b of ch[i]){
+      addN(a);addN(b);const oo={...o},dir=String(take(oo,['dir'])).toLowerCase();
+      const [s,t2]=dir==='back'?[b,a]:[a,b];
+      edges.push({source:s,target:t2,directed:ops[i-1]==='->'&&dir!=='none'&&dir!=='both',label:take(oo,['label']),weight:take(oo,['weight']),attrs:oo});
+    }
   }
+  return{nodes:[...nodes.values()],edges};
+}
+function parseNET(t){
+  const nodes=new Map(),edges=[];let mode='',nv=0;
+  const addN=(id,label)=>{if(!nodes.has(id))nodes.set(id,{id,label:label||id,attrs:{}});else if(label)nodes.get(id).label=label};
+  for(const raw of t.split(/\r?\n/)){
+    const l=raw.trim();if(!l||l[0]==='%')continue;
+    if(l[0]==='*'){mode=l.slice(1).trim().split(/\s+/)[0].toLowerCase();if(mode==='matrix')throw Error('Pajek *Matrix sections are not supported.');if(mode==='vertices'&&!nv)nv=parseInt(l.split(/\s+/)[1])||0;continue}
+    const k=[...l.matchAll(/"([^"]*)"|(\S+)/g)].map(m=>m[1]??m[2]);
+    if(mode==='vertices'){addN(k[0],k[1]);continue}
+    const dir=mode==='arcs'||mode==='arcslist';
+    if(mode==='edges'||mode==='arcs'){
+      if(k.length<2)continue;
+      addN(k[0]);addN(k[1]);
+      edges.push({source:k[0],target:k[1],directed:dir,label:'',weight:k[2]&&!isNaN(k[2])?k[2]:'',attrs:{}});
+    }else if(mode==='edgeslist'||mode==='arcslist'){
+      addN(k[0]);for(const x of k.slice(1)){addN(x);edges.push({source:k[0],target:x,directed:dir,label:'',weight:'',attrs:{}})}
+    }
+  }
+  for(let i=1;i<=Math.min(nv,1e6);i++)addN(String(i)); // vertices declared but not listed
   return{nodes:[...nodes.values()],edges};
 }
 function parseList(t){
   const nodes=new Map(),edges=[];
   for(const line of t.split(/\r?\n/)){
-    const l=line.trim();if(!l||/^[#%]/.test(l))continue;
-    const c=l.split(/\s+/);if(c.length<2)continue;
+    const l=line.trim();if(!l||/^(#|%|\/\/)/.test(l))continue;
+    const c=l.split(/[\s,;]+/);if(c.length<2)continue;
     for(const id of c.slice(0,2))if(!nodes.has(id))nodes.set(id,{id,label:id,attrs:{}});
     edges.push({source:c[0],target:c[1],directed:true,label:'',weight:c[2]&&!isNaN(c[2])?c[2]:'',attrs:{}});
   }
   return{nodes:[...nodes.values()],edges};
 }
 function build(){
-  if(S.xml&&S.xml.kind!=='xml'){const f={json:parseJSON,gml:parseGML,dot:parseDOT,list:parseList}[S.xml.kind];return f(S.xml.text)}
+  if(S.xml&&S.xml.kind!=='xml'){const f={json:parseJSON,net:parseNET,gml:parseGML,dot:parseDOT,list:parseList}[S.xml.kind];return f(S.xml.text)}
   if(S.xml){
     const doc=new DOMParser().parseFromString(S.xml.text,'application/xml');
     if(doc.getElementsByTagName('parsererror').length)throw Error('The XML could not be parsed.');
@@ -319,8 +370,8 @@ function build(){
 const esc=s=>String(s??'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
 function infer(vals){
   vals=vals.filter(v=>v!==''&&v!=null);if(!vals.length)return'string';
-  if(vals.every(v=>/^-?\d+$/.test(v)))return'int';
-  if(vals.every(v=>/^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(v)))return'double';
+  if(vals.every(v=>/^-?(0|[1-9]\d{0,14})$/.test(v)))return'int';
+  if(vals.every(v=>/^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$/.test(v)&&isFinite(v)))return'double';
   if(vals.every(v=>/^(true|false)$/.test(v)))return'boolean';
   return'string';
 }
@@ -331,18 +382,18 @@ function fields(items,base){
   return f;
 }
 const nBase=[{name:'label',get:n=>n.label,type:'string',native:1,always:1}];
-const eBase=[{name:'label',get:e=>e.label,type:'string',native:1},{name:'weight',get:e=>e.weight,type:'double',native:1}];
+const eBase=[{name:'label',get:e=>e.label,type:'string',native:1},{name:'weight',get:e=>e.weight,native:1}];
 const defDir=m=>m.edges.length?m.edges.some(e=>e.directed):true;
 
 function toGraphML(m){
   const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
   let o='<?xml version="1.0" encoding="UTF-8"?>\n<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n';
-  nf.forEach((f,i)=>o+=`  <key id="n${i}" for="node" attr.name="${esc(f.name)}" attr.type="${f.type}"/>\n`);
-  ef.forEach((f,i)=>o+=`  <key id="e${i}" for="edge" attr.name="${esc(f.name)}" attr.type="${f.type}"/>\n`);
+  nf.forEach((f,i)=>o+=`  <key id="kn${i}" for="node" attr.name="${esc(f.name)}" attr.type="${f.type}"/>\n`);
+  ef.forEach((f,i)=>o+=`  <key id="ke${i}" for="edge" attr.name="${esc(f.name)}" attr.type="${f.type}"/>\n`);
   o+=`  <graph id="G" edgedefault="${def?'directed':'undirected'}">\n`;
   const dl=(fs,p,it)=>fs.map((f,i)=>{const v=f.get(it);return v===''||v==null?'':`      <data key="${p}${i}">${esc(v)}</data>\n`}).join('');
-  for(const n of m.nodes)o+=`    <node id="${esc(n.id)}">\n${dl(nf,'n',n)}    </node>\n`;
-  m.edges.forEach((e,i)=>o+=`    <edge id="e${i}" source="${esc(e.source)}" target="${esc(e.target)}"${e.directed!==def?` directed="${e.directed}"`:''}>\n${dl(ef,'e',e)}    </edge>\n`);
+  for(const n of m.nodes)o+=`    <node id="${esc(n.id)}">\n${dl(nf,'kn',n)}    </node>\n`;
+  m.edges.forEach((e,i)=>o+=`    <edge id="e${i}" source="${esc(e.source)}" target="${esc(e.target)}"${e.directed!==def?` directed="${e.directed}"`:''}>\n${dl(ef,'ke',e)}    </edge>\n`);
   return[{name:baseName+'.graphml',text:o+'  </graph>\n</graphml>\n'}];
 }
 function toGEXF(m){
@@ -362,6 +413,11 @@ const extras=(items,res)=>[...new Set(items.flatMap(i=>Object.keys(i.attrs)))].f
 const pick=(o,k)=>{const key=Object.keys(o).find(x=>x.toLowerCase()===k);return key?o[key]:''};
 
 function toGephi(m,d,warn){
+  const hasRel=m.edges.some(e=>Object.keys(e.attrs).some(k=>k.toLowerCase()==='relation')),tname=hasRel?'connection_type':'relation';
+  if(m.edges.some(e=>Object.keys(e.attrs).some(k=>k.toLowerCase()==='type'))){
+    warn.push(`Gephi's Type column is reserved for Directed/Undirected, so the connection type was written as a "${tname}" column.`);
+    m={nodes:m.nodes,edges:m.edges.map(e=>{const a={};for(const[k,v]of Object.entries(e.attrs))a[k.toLowerCase()==='type'?tname:k]=v;return{...e,attrs:a}})};
+  }
   const nx=extras(m.nodes,['id','label']),ex=extras(m.edges,['source','target','type','id','label','weight']);
   const hasW=m.edges.some(e=>e.weight),
   nodes=toCSV(['Id','Label',...nx],m.nodes.map(n=>[n.id,n.label,...nx.map(k=>n.attrs[k]??'')]),d),
@@ -372,10 +428,11 @@ function toGephi(m,d,warn){
 function toKumu(m,d,keepId,warn){
   // Kumu identifies elements by Label, so connections must use labels and labels must be unique.
   const used=new Map(),lab=new Map();let fixed=0;
-  for(const n of m.nodes){let l=(n.label||n.id).trim();if(used.has(l)){l=`${l} (${n.id})`;fixed++}used.set(l,1);lab.set(n.id,l)}
+  for(const n of m.nodes){let l=(n.label||n.id).trim();if(used.has(l)){l=`${l} (${n.id})`;while(used.has(l))l+="'";fixed++}used.set(l,1);lab.set(n.id,l)}
   if(fixed)warn.push(`${fixed} duplicate node label(s) were made unique by appending the node id, because Kumu connects elements by label.`);
   const nres=['label','type','description','tags',...(keepId?['id']:[])],nx=extras(m.nodes,nres);
-  const eres=['from','to','type','direction','description','tags','label','weight','relation'],ex=extras(m.edges,eres);
+  const both=m.edges.some(e=>pick(e.attrs,'type')&&pick(e.attrs,'relation'));
+  const eres=['from','to','type','direction','description','tags','label','weight',...(both?[]:['relation'])],ex=extras(m.edges,eres);
   const hasL=m.edges.some(e=>e.label),hasW=m.edges.some(e=>e.weight);
   const nh=['Label','Type','Description','Tags',...(keepId?['Id']:[]),...nx];
   const nodes=toCSV(nh,m.nodes.map(n=>[lab.get(n.id),pick(n.attrs,'type'),pick(n.attrs,'description'),pick(n.attrs,'tags'),...(keepId?[n.id]:[]),...nx.map(k=>n.attrs[k]??'')]),d);
@@ -385,16 +442,16 @@ function toKumu(m,d,keepId,warn){
 }
 
 const jv=(v,t)=>t==='int'||t==='double'?Number(v):t==='boolean'?v==='true':v;
-const rec=(fs,it)=>{const o={};for(const f of fs){const v=f.get(it);if(v!==''&&v!=null)o[f.name]=jv(v,f.type)}return o};
+const rec=(fs,it,skip=[])=>{const o={};for(const f of fs){const v=f.get(it);if(v!==''&&v!=null&&!skip.includes(f.name))o[f.name]=jv(v,f.type)}return o};
 function toJSON(m){
   const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
-  const j={directed:def,nodes:m.nodes.map(n=>({id:n.id,...rec(nf,n)})),links:m.edges.map(e=>({source:e.source,target:e.target,...(e.directed!==def?{directed:e.directed}:{}),...rec(ef,e)}))};
+  const j={directed:def,nodes:m.nodes.map(n=>({id:n.id,...rec(nf,n,['id'])})),links:m.edges.map(e=>({source:e.source,target:e.target,...(e.directed!==def?{directed:e.directed}:{}),...rec(ef,e,['source','target','directed'])}))};
   return[{name:baseName+'.json',text:JSON.stringify(j,null,2)+'\n'}];
 }
 function toCyJS(m){
   const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
-  const j={data:{directed:def},elements:{nodes:m.nodes.map(n=>({data:{id:n.id,...rec(nf,n)}})),
-    edges:m.edges.map((e,i)=>({data:{id:'e'+i,source:e.source,target:e.target,...(e.directed!==def?{directed:e.directed}:{}),...rec(ef,e)}}))}};
+  const j={data:{directed:def},elements:{nodes:m.nodes.map(n=>({data:{id:n.id,...rec(nf,n,['id'])}})),
+    edges:m.edges.map((e,i)=>({data:{id:'e'+i,source:e.source,target:e.target,...(e.directed!==def?{directed:e.directed}:{}),...rec(ef,e,['id','source','target','directed'])}}))}};
   return[{name:baseName+'-cytoscape.json',text:JSON.stringify(j,null,2)+'\n'}];
 }
 function toGML(m,warn){
@@ -408,6 +465,17 @@ function toGML(m,warn){
   m.nodes.forEach((n,i)=>o+=`  node [\n    id ${i}\n${L(nf,n)}  ]\n`);
   for(const e of m.edges){if(!ix.has(e.source)||!ix.has(e.target))continue;o+=`  edge [\n    source ${ix.get(e.source)}\n    target ${ix.get(e.target)}\n${L(ef,e)}  ]\n`}
   return[{name:baseName+'.gml',text:o+']\n'}];
+}
+function toNET(m,warn){
+  const ix=new Map(m.nodes.map((n,i)=>[n.id,i+1])),q=v=>'"'+String(v).replace(/"/g,"'")+'"';
+  const ok=e=>ix.has(e.source)&&ix.has(e.target),ln=e=>`${ix.get(e.source)} ${ix.get(e.target)}${e.weight&&!isNaN(e.weight)?' '+e.weight:''}\r\n`;
+  let o=`*Vertices ${m.nodes.length}\r\n`;
+  m.nodes.forEach((n,i)=>o+=`${i+1} ${q(n.label)}\r\n`);
+  const ar=m.edges.filter(e=>ok(e)&&e.directed),ed=m.edges.filter(e=>ok(e)&&!e.directed);
+  if(ar.length)o+='*Arcs\r\n'+ar.map(ln).join('');
+  if(ed.length)o+='*Edges\r\n'+ed.map(ln).join('');
+  warn.push('Pajek .net keeps vertex labels, edge direction and weight only; ids become 1…n and other attributes are not written.');
+  return[{name:baseName+'.net',text:o}];
 }
 function toDOT(m){
   const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
@@ -441,7 +509,7 @@ function render(){
   const ids=new Set(m.nodes.map(n=>n.id));
   const dangling=m.edges.filter(e=>!ids.has(e.source)||!ids.has(e.target)).length;
   if(dangling)warn.push(`${dangling} edge(s) refer to nodes that do not exist.`);
-  const W={graphml:()=>toGraphML(m),gexf:()=>toGEXF(m),gml:()=>toGML(m,warn),dot:()=>toDOT(m),json:()=>toJSON(m),cyjs:()=>toCyJS(m),list:()=>toList(m,warn)};
+  const W={graphml:()=>toGraphML(m),gexf:()=>toGEXF(m),gml:()=>toGML(m,warn),net:()=>toNET(m,warn),dot:()=>toDOT(m),json:()=>toJSON(m),cyjs:()=>toCyJS(m),list:()=>toList(m,warn)};
   if(W[fmt])outputs=W[fmt]();
   else{const d=$('#delim').value;outputs=flavor==='kumu'?toKumu(m,d,$('#keepId').checked,warn):toGephi(m,d,warn)}
   msgs.innerHTML=warn.map(w=>`<p class="msg warn">${esc(w)}</p>`).join('');

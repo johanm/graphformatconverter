@@ -6,7 +6,9 @@ By [Johan Myrberger](https://www.linkedin.com/in/myrberger/)
 
 ## Use it
 
-Open `graph-converter.html` in a browser, or host it anywhere static (for example GitHub Pages). Drop a file in, choose an output format, download.
+**Run it directly:** <https://johanm.github.io/graphformatconverter/graphformatconverter.html>
+
+Or download `graphformatconverter.html` and open it locally, or host it anywhere static. Drop a file in, choose an output format, download.
 
 The default case is GraphML in, two Kumu-style CSV files out.
 
@@ -17,6 +19,7 @@ The default case is GraphML in, two Kumu-style CSV files out.
 | GraphML | yes | yes |
 | GEXF 1.3 | yes | yes |
 | GML | yes | yes |
+| Pajek `.net` | yes | yes |
 | Graphviz DOT | yes | yes |
 | JSON node-link (D3, NetworkX) | yes | yes |
 | Cytoscape.js JSON | yes | yes |
@@ -34,6 +37,8 @@ For CSV input, drop the nodes file and the edges file together. A file with `Sou
 
 Kumu links elements by label, so `From`/`To` hold labels. Duplicate labels are made unique, with a warning. Other attributes become extra columns.
 
+Gephi reserves `Type` for Directed/Undirected, so a connection type (for example from Kumu or the transform) is written as a `relation` column in Gephi output.
+
 ## Transform
 
 Replace all nodes of a chosen type with edges between their neighbours:
@@ -45,14 +50,14 @@ Replace all nodes of a chosen type with edges between their neighbours:
 ## Load from a URL
 
 ```
-graph-converter.html?file=https://example.com/graph.graphml
-graph-converter.html?file=…/nodes.csv&file=…/edges.csv&format=graphml
+https://johanm.github.io/graphformatconverter/graphformatconverter.html?file=https://example.com/graph.graphml
+https://johanm.github.io/graphformatconverter/graphformatconverter.html?file=…/nodes.csv&file=…/edges.csv&format=graphml
 ```
 
 | Parameter | Meaning |
 |---|---|
 | `file` | URL of a file to load. Repeat for a nodes + edges CSV pair. |
-| `format` | Preselected output: `csv`, `graphml`, `gexf`, `gml`, `dot`, `json`, `cyjs`, `list` |
+| `format` | Preselected output: `csv`, `graphml`, `gexf`, `gml`, `net`, `dot`, `json`, `cyjs`, `list` |
 | `style` | CSV style: `kumu` or `gephi` |
 
 The server hosting the file must allow cross-origin requests (CORS). Browsers usually block local files when the page is opened from disk.
@@ -61,8 +66,21 @@ The server hosting the file must allow cross-origin requests (CORS). Browsers us
 
 - Visual data (colors, sizes, positions), nested graphs and hyperedges are not preserved.
 - GML output keeps direction per graph and uses integer node ids.
+- Pajek output keeps labels, direction and weight only.
 - Edge-list output carries no direction, labels or attributes.
 - The preview layout slows down above roughly 1,500 nodes.
+
+## Examples
+
+Two small GraphML files in this repo, each with two node types (`Person` and `Project`) so the transform has something to chew on. Open one, tick **Replace nodes of one type with edges**, choose the attribute `type`, and try removing each type in turn.
+
+**[`example-people-projects.graphml`](https://johanm.github.io/graphformatconverter/graphformatconverter.html?file=example-people-projects.graphml)** is a true bipartite graph: people are linked only to projects.
+- Remove `Project`: a collaboration network, where people who share a project become linked.
+- Remove `Person`: projects become linked through shared people. Bob and Carol each link Apollo and Borealis, giving two parallel edges that the `via` attribute tells apart.
+
+**[`example-people-projects-mentoring.graphml`](https://johanm.github.io/graphformatconverter/graphformatconverter.html?file=example-people-projects-mentoring.graphml)** is the same graph plus one person-to-person edge (Alice mentors Eve), so it is not bipartite.
+- Remove `Project`: the same collaboration network, with the mentoring edge kept as-is.
+- Remove `Person`: the mentoring link chains through Alice and Eve and also links Apollo to Cedar, so the three projects form a triangle.
 
 ## License
 
