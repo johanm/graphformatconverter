@@ -82,6 +82,4 @@ Two small GraphML files in this repo, each with two node types (`Person` and `Pr
 - Remove `Project`: the same collaboration network, with the mentoring edge kept as-is.
 - Remove `Person`: the mentoring link chains through Alice and Eve and also links Apollo to Cedar, so the three projects form a triangle.
 
-## License
 
-Add a license of your choice (for example MIT) as `LICENSE`.
