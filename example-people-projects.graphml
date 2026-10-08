@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <key id="d0" for="node" attr.name="label" attr.type="string"/>
+  <key id="d1" for="node" attr.name="type" attr.type="string"/>
+  <graph id="G" edgedefault="undirected">
+
+    <!-- People -->
+    <node id="alice"><data key="d0">Alice</data><data key="d1">Person</data></node>
+    <node id="bob"><data key="d0">Bob</data><data key="d1">Person</data></node>
+    <node id="carol"><data key="d0">Carol</data><data key="d1">Person</data></node>
+    <node id="dave"><data key="d0">Dave</data><data key="d1">Person</data></node>
+    <node id="eve"><data key="d0">Eve</data><data key="d1">Person</data></node>
+
+    <!-- Projects -->
+    <node id="apollo"><data key="d0">Apollo</data><data key="d1">Project</data></node>
+    <node id="borealis"><data key="d0">Borealis</data><data key="d1">Project</data></node>
+    <node id="cedar"><data key="d0">Cedar</data><data key="d1">Project</data></node>
+
+    <!-- Membership: person - project -->
+    <edge source="alice" target="apollo"/>
+    <edge source="bob" target="apollo"/>
+    <edge source="carol" target="apollo"/>
+    <edge source="bob" target="borealis"/>
+    <edge source="carol" target="borealis"/>
+    <edge source="dave" target="borealis"/>
+    <edge source="dave" target="cedar"/>
+    <edge source="eve" target="cedar"/>
+
+  </graph>
+</graphml>

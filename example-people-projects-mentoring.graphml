@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <key id="d0" for="node" attr.name="label" attr.type="string"/>
+  <key id="d1" for="node" attr.name="type" attr.type="string"/>
+  <key id="d2" for="edge" attr.name="relation" attr.type="string"/>
+  <graph id="G" edgedefault="undirected">
+
+    <!-- People -->
+    <node id="alice"><data key="d0">Alice</data><data key="d1">Person</data></node>
+    <node id="bob"><data key="d0">Bob</data><data key="d1">Person</data></node>
+    <node id="carol"><data key="d0">Carol</data><data key="d1">Person</data></node>
+    <node id="dave"><data key="d0">Dave</data><data key="d1">Person</data></node>
+    <node id="eve"><data key="d0">Eve</data><data key="d1">Person</data></node>
+
+    <!-- Projects -->
+    <node id="apollo"><data key="d0">Apollo</data><data key="d1">Project</data></node>
+    <node id="borealis"><data key="d0">Borealis</data><data key="d1">Project</data></node>
+    <node id="cedar"><data key="d0">Cedar</data><data key="d1">Project</data></node>
+
+    <!-- Membership: person - project -->
+    <edge source="alice" target="apollo"><data key="d2">member of</data></edge>
+    <edge source="bob" target="apollo"><data key="d2">member of</data></edge>
+    <edge source="carol" target="apollo"><data key="d2">member of</data></edge>
+    <edge source="bob" target="borealis"><data key="d2">member of</data></edge>
+    <edge source="carol" target="borealis"><data key="d2">member of</data></edge>
+    <edge source="dave" target="borealis"><data key="d2">member of</data></edge>
+    <edge source="dave" target="cedar"><data key="d2">member of</data></edge>
+    <edge source="eve" target="cedar"><data key="d2">member of</data></edge>
+
+    <!-- Person - person: this edge makes the graph non-bipartite -->
+    <edge source="alice" target="eve"><data key="d2">mentors</data></edge>
+
+  </graph>
+</graphml>

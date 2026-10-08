@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph format converter</title>
+<style>
+:root{--bg:#f3f5f4;--panel:#fff;--ink:#1d2a2a;--mute:#5e6e6e;--line:#cfd8d6;--acc:#0f6b66;--acc-ink:#fff;--warn:#9a5b00;--err:#b3261e;--code:#f7f9f8}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#121a1a;--panel:#1a2424;--ink:#e3ecea;--mute:#93a5a2;--line:#2f3f3e;--acc:#4cc2b8;--acc-ink:#08201e;--warn:#e0a84a;--err:#ff8a80;--code:#141d1d}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 "Source Sans 3","Segoe UI",system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+main{max-width:1100px;margin:0 auto}
+h1{font:600 26px/1.2 Georgia,"Iowan Old Style",serif;margin:8px 0 4px}
+.sub{color:var(--mute);margin:0 0 20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px}
+h2{font:600 17px Georgia,serif;margin:0 0 12px}
+label{display:block;font-weight:600;font-size:13px;margin:12px 0 4px}
+select,textarea,button,input[type=text]{font:inherit;color:inherit}
+select{width:100%;padding:7px 8px;background:var(--panel);border:1px solid var(--line);border-radius:4px}
+textarea{width:100%;background:var(--code);border:1px solid var(--line);border-radius:4px;padding:8px;font:12px/1.45 ui-monospace,Consolas,monospace;resize:vertical}
+button{background:var(--acc);color:var(--acc-ink);border:0;border-radius:4px;padding:7px 12px;cursor:pointer;font-weight:600}
+button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,select:focus-visible,textarea:focus-visible,.drop:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.drop{border:2px dashed var(--line);border-radius:6px;padding:20px;text-align:center;color:var(--mute);cursor:pointer}
+.drop.over{border-color:var(--acc);color:var(--ink)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.chk{display:flex;gap:6px;align-items:center;font-weight:400;font-size:14px;margin-top:10px}
+#loaded{font-size:13px;color:var(--mute);margin-top:8px}
+#stats{font-size:14px;margin:14px 0 4px}
+.msg{font-size:13px;margin:4px 0}
+.warn{color:var(--warn)}.err{color:var(--err)}
+.file{margin-top:14px}
+.file .hd{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.file .hd b{font:600 14px ui-monospace,Consolas,monospace;word-break:break-all}
+.hint{font-size:12.5px;color:var(--mute);margin:6px 0 0}
+canvas{display:block;width:100%;height:480px;background:var(--code);border:1px solid var(--line);border-radius:4px;touch-action:none;cursor:grab;margin-top:10px}
+#legend{display:flex;gap:4px 14px;flex-wrap:wrap;font-size:13px;margin-top:8px}
+#legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.sec-gap{margin-top:16px}
+.row select{width:auto}
+.by{margin:0 0 6px;color:var(--mute);font-size:15px}.by a{color:var(--acc);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Graph format converter</h1>
+<p class="by">by <a href="https://www.linkedin.com/in/myrberger/" target="_blank" rel="noopener">Johan Myrberger</a></p>
+<p class="sub">GraphML, GEXF, GML, Graphviz DOT, JSON (node-link and Cytoscape.js), edge lists and node/edge CSV (Gephi or Kumu columns). Everything runs in your browser; no file leaves your machine.</p>
+
+<div class="grid">
+<section>
+  <h2>Input</h2>
+  <div class="drop" id="drop" tabindex="0" role="button">Drop files here or click to choose<br><small>One graph file (GraphML, GEXF, GML, DOT, JSON, edge list), or a nodes CSV and an edges CSV together</small></div>
+  <input type="file" id="file" multiple accept=".graphml,.xml,.gexf,.csv,.tsv,.txt,.gml,.dot,.gv,.json,.edges,.edgelist" hidden>
+  <div id="loaded">Nothing loaded.</div>
+  <label for="paste">Or paste GraphML, GEXF or CSV</label>
+  <textarea id="paste" rows="5" spellcheck="false" placeholder="Paste content and press Add pasted text"></textarea>
+  <div class="row"><button class="sec" id="addPaste">Add pasted text</button><button class="sec" id="sample">Load sample</button><button class="sec" id="clear">Clear</button></div>
+  <p class="hint">CSV files are recognised automatically: a file with Source/From and Target/To columns is the edge list, any other is the node list. CSV with only edges is fine; nodes are created from the edges. Plain edge lists are read as directed.<br>Tip: open this page with <code>?file=https://…</code> to load a file from a URL (repeat <code>file=</code> for a nodes + edges CSV pair). Optional: <code>&amp;format=graphml</code> and <code>&amp;style=gephi</code> preselect the output. The server hosting the file must allow cross-origin requests.</p>
+</section>
+
+<section>
+  <h2>Output format</h2>
+  <label for="fmt">Format</label>
+  <select id="fmt">
+    <option value="csv" selected>CSV: one file for nodes, one for edges</option>
+    <option value="graphml">GraphML</option>
+    <option value="gexf">GEXF 1.3</option>
+    <option value="gml">GML</option>
+    <option value="dot">Graphviz DOT</option>
+    <option value="json">JSON node-link (D3, NetworkX)</option>
+    <option value="cyjs">Cytoscape.js JSON</option>
+    <option value="list">Plain edge list (source target weight)</option>
+  </select>
+  <div id="csvOpts">
+    <label for="flavor">CSV column style</label>
+    <select id="flavor">
+      <option value="kumu" selected>Kumu (elements: Label / connections: From, To)</option>
+      <option value="gephi">Gephi (nodes: Id, Label / edges: Source, Target)</option>
+    </select>
+    <label for="delim">Delimiter</label>
+    <select id="delim"><option value=",">Comma</option><option value=";">Semicolon</option><option value="&#9;">Tab</option></select>
+    <label class="chk" id="idWrap"><input type="checkbox" id="keepId" checked> Keep original node id as an extra "Id" column (Kumu)</label>
+  </div>
+  <p class="hint" id="flavorHint"></p>
+</section>
+</div>
+
+<section class="sec-gap">
+  <h2>Transform</h2>
+  <label class="chk" style="margin-top:0"><input type="checkbox" id="tfOn"> Replace nodes of one type with edges</label>
+  <div id="tfBody" hidden>
+    <div class="grid">
+      <div><label for="tfAttr">Node attribute that holds the type</label><select id="tfAttr"></select></div>
+      <div><label for="tfVals">Types to replace (select one or more)</label><select id="tfVals" multiple size="5"></select></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="tfVia" checked> Record the removed node's label in a "via" attribute on each new edge</label>
+    <p class="hint">Each removed node is replaced by edges between its neighbours: every incoming neighbour is linked to every outgoing neighbour, and undirected neighbours are linked pairwise. New edges get a "relation" attribute holding the removed type (Kumu output writes it into the connection Type column). Nodes without attributes cannot be selected.</p>
+  </div>
+</section>
+
+<section class="sec-gap">
+  <h2>Graph preview</h2>
+  <div class="row" style="margin-top:0">
+    <button class="sec" id="vRun">Pause layout</button><button class="sec" id="vReset">Re-layout</button>
+    <label class="chk" style="margin:0"><input type="checkbox" id="vLab" checked> Labels</label>
+    <select id="vColor" aria-label="Color nodes by"></select>
+  </div>
+  <canvas id="cv" aria-label="Graph preview"></canvas>
+  <div id="legend"></div>
+  <p class="hint">ForceAtlas2-style layout, run live. Scroll to zoom, drag the background to pan, drag a node to move it. Layout cost grows quickly above about 1,500 nodes.</p>
+</section>
+
+<div id="stats"></div>
+<div id="msgs"></div>
+<div class="row" id="allRow" hidden><button id="dlAll">Download all files</button></div>
+<div id="outs"></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const S = {xml:null, nodes:null, edges:null};
+const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <key id="d0" for="node" attr.name="label" attr.type="string"/>
+  <key id="d1" for="node" attr.name="role" attr.type="string"/>
+  <key id="d2" for="edge" attr.name="weight" attr.type="double"/>
+  <key id="d3" for="edge" attr.name="relation" attr.type="string"/>
+  <graph id="G" edgedefault="directed">
+    <node id="n0"><data key="d0">Alice</data><data key="d1">Founder</data></node>
+    <node id="n1"><data key="d0">Bob</data><data key="d1">Engineer</data></node>
+    <node id="n2"><data key="d0">Carol</data><data key="d1">Designer</data></node>
+    <edge id="e0" source="n0" target="n1"><data key="d2">2.5</data><data key="d3">manages</data></edge>
+    <edge id="e1" source="n1" target="n2" directed="false"><data key="d2">1</data><data key="d3">works with</data></edge>
+  </graph>
+</graphml>`;
+let baseName = 'graph', outputs = [];
+
+/* ---------- CSV ---------- */
+function detectDelim(t){const l=t.split(/\r?\n/)[0]||'';const c=d=>l.split(d).length;return [[',',c(',')],[';',c(';')],['\t',c('\t')]].sort((a,b)=>b[1]-a[1])[0][0]}
+function parseCSV(t,d){
+  const rows=[];let r=[],c='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch=='"'){if(t[i+1]=='"'){c+='"';i++}else q=false}else c+=ch}
+    else if(ch=='"')q=true;
+    else if(ch==d){r.push(c);c=''}
+    else if(ch=='\n'||ch=='\r'){if(ch=='\r'&&t[i+1]=='\n')i++;r.push(c);rows.push(r);r=[];c=''}
+    else c+=ch}
+  if(c!==''||r.length){r.push(c);rows.push(r)}
+  return rows.filter(r=>r.length>1||r[0]!=='');
+}
+function csvLine(cells,d){return cells.map(v=>{v=v==null?'':String(v);return(v.includes(d)||/["\n\r]/.test(v)||/^\s|\s$/.test(v))?'"'+v.replace(/"/g,'""')+'"':v}).join(d)}
+const toCSV=(head,rows,d)=>[head,...rows].map(r=>csvLine(r,d)).join('\r\n')+'\r\n';
+
+/* ---------- ingest ---------- */
+function kindOf(t){
+  if(/^\s*</.test(t))return'xml';
+  if(/^\s*[\[{]/.test(t))return'json';
+  const c=t.replace(/^\s*(#|%|\/\/).*$/gm,'');
+  if(/^\s*(?:strict\s+)?(?:di)?graph\s*[\w".-]*\s*\{/i.test(c))return'dot';
+  if(/(^|\n)\s*graph\s*\[/i.test(c))return'gml';
+  const l=c.split(/\r?\n/).find(x=>x.trim())||'';
+  if(!/[,;\t]/.test(l)&&/\S\s+\S/.test(l.trim()))return'list';
+  return'';
+}
+function ingest(text,name){
+  const t=text.replace(/^\uFEFF/,'');
+  if(!t.trim())return;
+  baseName=name.replace(/\.[^.]+$/,'')||'graph';
+  const kind=kindOf(t);
+  if(kind){S.xml={text:t,name,kind};S.nodes=S.edges=null;return}
+  const rows=parseCSV(t,detectDelim(t));
+  if(!rows.length)return;
+  const h=rows[0].map(x=>x.trim().toLowerCase());
+  const isEdge=(h.includes('source')||h.includes('from'))&&(h.includes('target')||h.includes('to'));
+  S.xml=null;S[isEdge?'edges':'nodes']={rows,name};
+}
+
+/* ---------- parsers: all return {nodes:[{id,label,attrs}], edges:[{source,target,directed,label,weight,attrs}]} ---------- */
+function take(o,names){for(const n of names){const k=Object.keys(o).find(x=>x.toLowerCase()===n);if(k!==undefined){const v=o[k];delete o[k];return v}}return''}
+const isDir=v=>/^(directed|mutual|undirected)$/i.test((v||'').trim());
+const dirOf=(v,def)=>{v=(v||'').trim().toLowerCase();return v==='directed'?true:(v==='undirected'||v==='mutual')?false:def};
+
+function parseGraphML(doc){
+  const keys={};
+  for(const k of doc.getElementsByTagName('key'))keys[k.getAttribute('id')]={name:k.getAttribute('attr.name')||k.getAttribute('id')};
+  const g=doc.getElementsByTagName('graph')[0];if(!g)throw Error('No <graph> element found.');
+  const def=g.getAttribute('edgedefault')!=='undirected';
+  const data=el=>{const o={};for(const d of el.children)if(d.localName==='data'){const k=keys[d.getAttribute('key')];if(k)o[k.name]=d.textContent.trim()}return o};
+  const nodes=[],edges=[];
+  for(const n of doc.getElementsByTagName('node')){const o=data(n);const id=n.getAttribute('id');nodes.push({id,label:take(o,['label','name'])||id,attrs:o})}
+  for(const e of doc.getElementsByTagName('edge')){const o=data(e);const d=e.getAttribute('directed');
+    edges.push({source:e.getAttribute('source'),target:e.getAttribute('target'),directed:d==null?def:d==='true',label:take(o,['label']),weight:take(o,['weight']),attrs:o})}
+  return{nodes,edges};
+}
+function parseGEXF(doc){
+  const names={};
+  for(const a of doc.getElementsByTagName('attributes')){const c=a.getAttribute('class');for(const x of a.children)names[c+':'+x.getAttribute('id')]=x.getAttribute('title')||x.getAttribute('id')}
+  const g=doc.getElementsByTagName('graph')[0];if(!g)throw Error('No <graph> element found.');
+  const def=g.getAttribute('defaultedgetype')!=='undirected';
+  const av=(el,c)=>{const o={};for(const v of el.getElementsByTagName('attvalue')){const f=v.getAttribute('for');o[names[c+':'+f]||f]=v.getAttribute('value')}return o};
+  const nodes=[],edges=[];
+  for(const n of doc.getElementsByTagName('node')){const id=n.getAttribute('id');nodes.push({id,label:n.getAttribute('label')||id,attrs:av(n,'node')})}
+  for(const e of doc.getElementsByTagName('edge')){const o=av(e,'edge');const t=e.getAttribute('type');
+    edges.push({source:e.getAttribute('source'),target:e.getAttribute('target'),directed:dirOf(t,def),label:e.getAttribute('label')||take(o,['label']),weight:e.getAttribute('weight')||take(o,['weight']),attrs:o})}
+  return{nodes,edges};
+}
+function parseCsvModel(){
+  const map=new Map(),byLabel=new Map(),nodes=[],edges=[];
+  const add=(id,label,attrs)=>{const n={id,label:label||id,attrs:attrs||{}};map.set(id,n);byLabel.set(n.label,n);nodes.push(n);return n};
+  if(S.nodes){
+    const h=S.nodes.rows[0].map(x=>x.trim()),L=h.map(x=>x.toLowerCase()),iid=L.indexOf('id'),ilab=L.indexOf('label');
+    for(const r of S.nodes.rows.slice(1)){
+      const lab=ilab>=0?(r[ilab]||'').trim():'';const id=((iid>=0?r[iid]:'')||lab||'').trim();if(!id)continue;
+      const o={};h.forEach((k,i)=>{if(i!==iid&&i!==ilab&&k&&r[i])o[k]=r[i]});
+      add(id,lab,o);
+    }
+  }
+  const resolve=x=>{x=(x||'').trim();if(map.has(x))return x;if(byLabel.has(x))return byLabel.get(x).id;add(x,x);return x};
+  if(S.edges){
+    const h=S.edges.rows[0].map(x=>x.trim()),L=h.map(x=>x.toLowerCase());
+    const ix=(...n)=>{for(const a of n){const i=L.indexOf(a);if(i>=0)return i}return-1};
+    const is=ix('source','from'),it=ix('target','to'),ty=ix('type'),di=ix('direction'),iw=ix('weight'),il=ix('label'),ie=ix('id');
+    for(const r of S.edges.rows.slice(1)){
+      if(!(r[is]||'').trim()||!(r[it]||'').trim())continue;
+      const o={};
+      h.forEach((k,i)=>{if(![is,it,di,iw,il,ie].includes(i)&&k&&r[i]&&!(i===ty&&isDir(r[i])))o[k]=r[i]});
+      let dv=di>=0?r[di]:'';if(!dv&&ty>=0&&isDir(r[ty]))dv=r[ty];
+      edges.push({source:resolve(r[is]),target:resolve(r[it]),directed:dirOf(dv,true),label:il>=0?r[il]:'',weight:iw>=0?r[iw]:'',attrs:o,id:ie>=0?r[ie]:''});
+    }
+  }
+  return{nodes,edges};
+}
+const finish=(nodes,edges)=>{const ids=new Set(nodes.map(n=>n.id));for(const e of edges)for(const x of[e.source,e.target])if(!ids.has(x)){ids.add(x);nodes.push({id:x,label:x,attrs:{}})}return{nodes,edges}};
+function parseJSON(t){
+  const j=JSON.parse(t),str=v=>v==null?'':typeof v==='object'?JSON.stringify(v):String(v);
+  const flat=(o,skip)=>{const r={};for(const k in o)if(!skip.includes(k)&&o[k]!=null)r[k]=str(o[k]);return r};
+  const eid=v=>v&&typeof v==='object'?str(v.id):str(v);
+  let ns,es,def=true;
+  if(j.elements||Array.isArray(j)){ // Cytoscape.js
+    const el=j.elements||j,all=(Array.isArray(el)?el:[...(el.nodes||[]),...(el.edges||[])]).map(x=>x.data||x);
+    ns=all.filter(d=>d.source===undefined);es=all.filter(d=>d.source!==undefined);
+    def=!(j.data&&j.data.directed===false);
+  }else{ns=j.nodes||[];es=j.links||j.edges||[];def=j.directed!==false}
+  const nodes=ns.map(d=>{const id=str(d.id??d.name??d.key),o=flat(d,['id']);return{id,label:take(o,['label','name'])||id,attrs:o}});
+  const edges=es.map(d=>{const o=flat(d,['id','source','target','directed']);
+    return{source:eid(d.source),target:eid(d.target),directed:typeof d.directed==='boolean'?d.directed:def,label:take(o,['label']),weight:take(o,['weight','value']),attrs:o}});
+  return finish(nodes,edges);
+}
+function parseGML(t){
+  t=t.replace(/^\s*#.*$/gm,'');
+  const tok=[...t.matchAll(/"((?:[^"\\]|\\.)*)"|(\[)|(\])|([^\s\[\]"]+)/g)].map(m=>m[2]?'[':m[3]?']':m[1]!==undefined?{s:m[1]}:m[4]);
+  let p=0;
+  const list=()=>{const r=[];while(p<tok.length&&tok[p]!==']'){const k=tok[p++];let v=tok[p++];if(v==='['){v=list();p++}else if(v&&v.s!==undefined)v=v.s;r.push([typeof k==='object'?k.s:k,v])}return r};
+  const root=list(),gi=root.find(a=>String(a[0]).toLowerCase()==='graph');
+  if(!gi)throw Error('No graph block found in GML.');
+  const g=gi[1],get=(l,k)=>{const x=l.find(a=>a[0]===k);return x?x[1]:undefined};
+  const def=String(get(g,'directed'))==='1';
+  const flat=(l,skip)=>{const o={};for(const[k,v]of l)if(!skip.includes(k)&&!Array.isArray(v))o[k]=String(v);return o};
+  const nodes=g.filter(a=>a[0]==='node').map(a=>{const id=String(get(a[1],'id')),o=flat(a[1],['id']);return{id,label:take(o,['label','name'])||id,attrs:o}});
+  const edges=g.filter(a=>a[0]==='edge').map(a=>{const l=a[1],o=flat(l,['source','target']);
+    return{source:String(get(l,'source')),target:String(get(l,'target')),directed:def,label:take(o,['label']),weight:take(o,['weight','value']),attrs:o}});
+  return finish(nodes,edges);
+}
+function parseDOT(t){
+  t=t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*(#|\/\/).*$/gm,'').replace(/\s\/\/.*$/gm,'');
+  const dg=/^\s*(?:strict\s+)?digraph/i.test(t);
+  const tok=[...t.matchAll(/"((?:[^"\\]|\\.)*)"|(->|--)|([\[\]{}=;,])|((?:(?!->|--)[^\s\[\]{}=;,"])+)/g)].map(m=>m[1]!==undefined?{s:m[1].replace(/\\"/g,'"')}:m[2]||m[3]||m[4]);
+  const idOf=x=>x&&typeof x==='object'?x.s:x;
+  let p=tok.indexOf('{')+1;
+  const nodes=new Map(),edges=[];
+  const addN=id=>{if(!nodes.has(id))nodes.set(id,{id,label:id,attrs:{}});return nodes.get(id)};
+  const attrs=()=>{const o={};if(tok[p]!=='[')return o;p++;
+    while(p<tok.length&&tok[p]!==']'){const k=idOf(tok[p++]);if(tok[p]==='='){p++;o[k]=idOf(tok[p++])}if(tok[p]===','||tok[p]===';')p++}
+    p++;return o};
+  while(p<tok.length){
+    const x=tok[p];
+    if(x==='}'||x==='{'||x===';'||x===','){p++;continue}
+    if(x==='subgraph'){p++;if(tok[p]!=='{')p++;continue}
+    if((x==='node'||x==='edge'||x==='graph')&&tok[p+1]==='['){p++;attrs();continue}
+    const ch=[idOf(tok[p++])],ops=[];
+    while(tok[p]==='->'||tok[p]==='--'){ops.push(tok[p++]);ch.push(idOf(tok[p++]))}
+    if(tok[p]==='='&&ch.length===1){p+=2;continue}
+    const o=attrs();
+    if(ch.length===1){const n=addN(ch[0]);if(o.label){n.label=o.label}delete o.label;Object.assign(n.attrs,o)}
+    else ch.slice(1).forEach((b,i)=>{addN(ch[i]);addN(b);const oo={...o};
+      edges.push({source:ch[i],target:b,directed:ops[i]==='->',label:take(oo,['label']),weight:take(oo,['weight']),attrs:oo})});
+  }
+  return{nodes:[...nodes.values()],edges};
+}
+function parseList(t){
+  const nodes=new Map(),edges=[];
+  for(const line of t.split(/\r?\n/)){
+    const l=line.trim();if(!l||/^[#%]/.test(l))continue;
+    const c=l.split(/\s+/);if(c.length<2)continue;
+    for(const id of c.slice(0,2))if(!nodes.has(id))nodes.set(id,{id,label:id,attrs:{}});
+    edges.push({source:c[0],target:c[1],directed:true,label:'',weight:c[2]&&!isNaN(c[2])?c[2]:'',attrs:{}});
+  }
+  return{nodes:[...nodes.values()],edges};
+}
+function build(){
+  if(S.xml&&S.xml.kind!=='xml'){const f={json:parseJSON,gml:parseGML,dot:parseDOT,list:parseList}[S.xml.kind];return f(S.xml.text)}
+  if(S.xml){
+    const doc=new DOMParser().parseFromString(S.xml.text,'application/xml');
+    if(doc.getElementsByTagName('parsererror').length)throw Error('The XML could not be parsed.');
+    const root=doc.documentElement.localName.toLowerCase();
+    if(root==='graphml')return parseGraphML(doc);
+    if(root==='gexf')return parseGEXF(doc);
+    throw Error('XML root is <'+root+'>; expected graphml or gexf.');
+  }
+  if(S.nodes||S.edges)return parseCsvModel();
+  return null;
+}
+
+/* ---------- writers ---------- */
+const esc=s=>String(s??'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
+function infer(vals){
+  vals=vals.filter(v=>v!==''&&v!=null);if(!vals.length)return'string';
+  if(vals.every(v=>/^-?\d+$/.test(v)))return'int';
+  if(vals.every(v=>/^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(v)))return'double';
+  if(vals.every(v=>/^(true|false)$/.test(v)))return'boolean';
+  return'string';
+}
+function fields(items,base){
+  const f=base.filter(b=>b.always||items.some(i=>b.get(i)))
+    .map(b=>({...b,type:b.type||infer(items.map(b.get))}));
+  for(const k of new Set(items.flatMap(i=>Object.keys(i.attrs))))f.push({name:k,get:i=>i.attrs[k]??'',type:infer(items.map(i=>i.attrs[k]))});
+  return f;
+}
+const nBase=[{name:'label',get:n=>n.label,type:'string',native:1,always:1}];
+const eBase=[{name:'label',get:e=>e.label,type:'string',native:1},{name:'weight',get:e=>e.weight,type:'double',native:1}];
+const defDir=m=>m.edges.length?m.edges.some(e=>e.directed):true;
+
+function toGraphML(m){
+  const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
+  let o='<?xml version="1.0" encoding="UTF-8"?>\n<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n';
+  nf.forEach((f,i)=>o+=`  <key id="n${i}" for="node" attr.name="${esc(f.name)}" attr.type="${f.type}"/>\n`);
+  ef.forEach((f,i)=>o+=`  <key id="e${i}" for="edge" attr.name="${esc(f.name)}" attr.type="${f.type}"/>\n`);
+  o+=`  <graph id="G" edgedefault="${def?'directed':'undirected'}">\n`;
+  const dl=(fs,p,it)=>fs.map((f,i)=>{const v=f.get(it);return v===''||v==null?'':`      <data key="${p}${i}">${esc(v)}</data>\n`}).join('');
+  for(const n of m.nodes)o+=`    <node id="${esc(n.id)}">\n${dl(nf,'n',n)}    </node>\n`;
+  m.edges.forEach((e,i)=>o+=`    <edge id="e${i}" source="${esc(e.source)}" target="${esc(e.target)}"${e.directed!==def?` directed="${e.directed}"`:''}>\n${dl(ef,'e',e)}    </edge>\n`);
+  return[{name:baseName+'.graphml',text:o+'  </graph>\n</graphml>\n'}];
+}
+function toGEXF(m){
+  const nf=fields(m.nodes,nBase).filter(f=>!f.native),ef=fields(m.edges,eBase).filter(f=>!f.native),def=defDir(m);
+  const ty=t=>t==='int'?'integer':t;
+  let o=`<?xml version="1.0" encoding="UTF-8"?>\n<gexf xmlns="http://gexf.net/1.3" version="1.3">\n  <graph mode="static" defaultedgetype="${def?'directed':'undirected'}">\n`;
+  const decl=(fs,c)=>fs.length?`    <attributes class="${c}">\n${fs.map((f,i)=>`      <attribute id="${i}" title="${esc(f.name)}" type="${ty(f.type)}"/>\n`).join('')}    </attributes>\n`:'';
+  const av=(fs,it)=>{const s=fs.map((f,i)=>{const v=f.get(it);return v===''||v==null?'':`<attvalue for="${i}" value="${esc(v)}"/>`}).join('');return s?`\n          <attvalues>${s}</attvalues>\n        `:''};
+  o+=decl(nf,'node')+decl(ef,'edge')+'    <nodes>\n';
+  for(const n of m.nodes){const a=av(nf,n);o+=`      <node id="${esc(n.id)}" label="${esc(n.label)}"${a?`>${a}</node>`:'/>'}\n`}
+  o+='    </nodes>\n    <edges>\n';
+  m.edges.forEach((e,i)=>{const a=av(ef,e);
+    o+=`      <edge id="${i}" source="${esc(e.source)}" target="${esc(e.target)}"${e.directed!==def?` type="${e.directed?'directed':'undirected'}"`:''}${e.label?` label="${esc(e.label)}"`:''}${e.weight?` weight="${esc(e.weight)}"`:''}${a?`>${a}</edge>`:'/>'}\n`});
+  return[{name:baseName+'.gexf',text:o+'    </edges>\n  </graph>\n</gexf>\n'}];
+}
+const extras=(items,res)=>[...new Set(items.flatMap(i=>Object.keys(i.attrs)))].filter(k=>!res.includes(k.toLowerCase()));
+const pick=(o,k)=>{const key=Object.keys(o).find(x=>x.toLowerCase()===k);return key?o[key]:''};
+
+function toGephi(m,d,warn){
+  const nx=extras(m.nodes,['id','label']),ex=extras(m.edges,['source','target','type','id','label','weight']);
+  const hasW=m.edges.some(e=>e.weight),
+  nodes=toCSV(['Id','Label',...nx],m.nodes.map(n=>[n.id,n.label,...nx.map(k=>n.attrs[k]??'')]),d),
+  edges=toCSV(['Source','Target','Type','Id','Label',...(hasW?['Weight']:[]),...ex],
+    m.edges.map((e,i)=>[e.source,e.target,e.directed?'Directed':'Undirected',e.id||i,e.label,...(hasW?[e.weight]:[]),...ex.map(k=>e.attrs[k]??'')]),d);
+  return[{name:baseName+'-nodes.csv',text:nodes},{name:baseName+'-edges.csv',text:edges}];
+}
+function toKumu(m,d,keepId,warn){
+  // Kumu identifies elements by Label, so connections must use labels and labels must be unique.
+  const used=new Map(),lab=new Map();let fixed=0;
+  for(const n of m.nodes){let l=(n.label||n.id).trim();if(used.has(l)){l=`${l} (${n.id})`;fixed++}used.set(l,1);lab.set(n.id,l)}
+  if(fixed)warn.push(`${fixed} duplicate node label(s) were made unique by appending the node id, because Kumu connects elements by label.`);
+  const nres=['label','type','description','tags',...(keepId?['id']:[])],nx=extras(m.nodes,nres);
+  const eres=['from','to','type','direction','description','tags','label','weight','relation'],ex=extras(m.edges,eres);
+  const hasL=m.edges.some(e=>e.label),hasW=m.edges.some(e=>e.weight);
+  const nh=['Label','Type','Description','Tags',...(keepId?['Id']:[]),...nx];
+  const nodes=toCSV(nh,m.nodes.map(n=>[lab.get(n.id),pick(n.attrs,'type'),pick(n.attrs,'description'),pick(n.attrs,'tags'),...(keepId?[n.id]:[]),...nx.map(k=>n.attrs[k]??'')]),d);
+  const eh=['From','To','Type','Direction','Description','Tags',...(hasL?['Label']:[]),...(hasW?['Weight']:[]),...ex];
+  const edges=toCSV(eh,m.edges.map(e=>[lab.get(e.source),lab.get(e.target),pick(e.attrs,'type')||pick(e.attrs,'relation'),e.directed?'directed':'undirected',pick(e.attrs,'description'),pick(e.attrs,'tags'),...(hasL?[e.label]:[]),...(hasW?[e.weight]:[]),...ex.map(k=>e.attrs[k]??'')]),d);
+  return[{name:baseName+'-elements.csv',text:nodes},{name:baseName+'-connections.csv',text:edges}];
+}
+
+const jv=(v,t)=>t==='int'||t==='double'?Number(v):t==='boolean'?v==='true':v;
+const rec=(fs,it)=>{const o={};for(const f of fs){const v=f.get(it);if(v!==''&&v!=null)o[f.name]=jv(v,f.type)}return o};
+function toJSON(m){
+  const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
+  const j={directed:def,nodes:m.nodes.map(n=>({id:n.id,...rec(nf,n)})),links:m.edges.map(e=>({source:e.source,target:e.target,...(e.directed!==def?{directed:e.directed}:{}),...rec(ef,e)}))};
+  return[{name:baseName+'.json',text:JSON.stringify(j,null,2)+'\n'}];
+}
+function toCyJS(m){
+  const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
+  const j={data:{directed:def},elements:{nodes:m.nodes.map(n=>({data:{id:n.id,...rec(nf,n)}})),
+    edges:m.edges.map((e,i)=>({data:{id:'e'+i,source:e.source,target:e.target,...(e.directed!==def?{directed:e.directed}:{}),...rec(ef,e)}}))}};
+  return[{name:baseName+'-cytoscape.json',text:JSON.stringify(j,null,2)+'\n'}];
+}
+function toGML(m,warn){
+  const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m),ix=new Map(m.nodes.map((n,i)=>[n.id,i]));
+  const key=k=>{k=k.replace(/[^A-Za-z0-9]/g,'_');return/^[A-Za-z]/.test(k)?k:'a'+k};
+  const val=(v,t)=>t==='int'||t==='double'?v:'"'+String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"';
+  const L=(fs,it)=>fs.map(f=>{const v=f.get(it);return v===''||v==null?'':`    ${key(f.name)} ${val(v,f.type)}\n`}).join('');
+  if(m.edges.some(e=>e.directed!==def))warn.push('GML stores direction once per graph, so edges whose direction differs from the rest lose it.');
+  warn.push('GML node ids are plain integers; the original ids are not kept (labels are).');
+  let o=`graph [\n  directed ${def?1:0}\n`;
+  m.nodes.forEach((n,i)=>o+=`  node [\n    id ${i}\n${L(nf,n)}  ]\n`);
+  for(const e of m.edges){if(!ix.has(e.source)||!ix.has(e.target))continue;o+=`  edge [\n    source ${ix.get(e.source)}\n    target ${ix.get(e.target)}\n${L(ef,e)}  ]\n`}
+  return[{name:baseName+'.gml',text:o+']\n'}];
+}
+function toDOT(m){
+  const nf=fields(m.nodes,nBase),ef=fields(m.edges,eBase),def=defDir(m);
+  const q=v=>'"'+String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,'\\n')+'"';
+  const al=(fs,it,ex=[])=>{const a=[...ex,...fs.map(f=>{const v=f.get(it);return v===''||v==null?'':`${f.name.replace(/\W/g,'_')}=${q(v)}`}).filter(Boolean)];return a.length?` [${a.join(', ')}]`:''};
+  let o=`${def?'digraph':'graph'} G {\n`;
+  for(const n of m.nodes)o+=`  ${q(n.id)}${al(nf,n)};\n`;
+  for(const e of m.edges)o+=`  ${q(e.source)} ${def?'->':'--'} ${q(e.target)}${al(ef,e,def&&!e.directed?['dir=none']:[])};\n`;
+  return[{name:baseName+'.dot',text:o+'}\n'}];
+}
+function toList(m,warn){
+  const s=v=>String(v).replace(/\s+/g,'_'),linked=new Set(m.edges.flatMap(e=>[e.source,e.target])),iso=m.nodes.filter(n=>!linked.has(n.id)).length;
+  warn.push('An edge list holds only source, target and weight: direction, labels and attributes are not written.'+(iso?` ${iso} node(s) without edges are left out.`:''));
+  return[{name:baseName+'-edges.txt',text:m.edges.map(e=>[s(e.source),s(e.target),...(e.weight?[e.weight]:[])].join(' ')).join('\n')+'\n'}];
+}
+/* ---------- UI ---------- */
+function download(f){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([f.text],{type:'text/plain;charset=utf-8'}));a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+function render(){
+  const msgs=$('#msgs'),outs=$('#outs'),stats=$('#stats'),warn=[];
+  msgs.innerHTML='';outs.innerHTML='';stats.textContent='';outputs=[];$('#allRow').hidden=true;
+  const fmt=$('#fmt').value,flavor=$('#flavor').value;
+  $('#csvOpts').hidden=fmt!=='csv';$('#idWrap').hidden=flavor!=='kumu';
+  $('#flavorHint').textContent=fmt!=='csv'?'':flavor==='kumu'
+    ?'Kumu needs a Label for every element and From/To (matching labels) for every connection. Direction is written as directed or undirected.'
+    :'Gephi needs Id for nodes and Source/Target (matching ids) for edges. Type is written as Directed or Undirected.';
+  const names=[S.xml&&S.xml.name,S.nodes&&S.nodes.name,S.edges&&S.edges.name].filter(Boolean);
+  $('#loaded').textContent=names.length?'Loaded: '+names.join(', '):'Nothing loaded.';
+  if(buildErr){msgs.innerHTML=`<p class="msg err">${esc(buildErr)}</p>`;return}
+  const m=cur;if(!m)return;
+  stats.textContent=`${m.nodes.length} nodes, ${m.edges.length} edges`+(tinfo?` (${tinfo})`:'');
+  const ids=new Set(m.nodes.map(n=>n.id));
+  const dangling=m.edges.filter(e=>!ids.has(e.source)||!ids.has(e.target)).length;
+  if(dangling)warn.push(`${dangling} edge(s) refer to nodes that do not exist.`);
+  const W={graphml:()=>toGraphML(m),gexf:()=>toGEXF(m),gml:()=>toGML(m,warn),dot:()=>toDOT(m),json:()=>toJSON(m),cyjs:()=>toCyJS(m),list:()=>toList(m,warn)};
+  if(W[fmt])outputs=W[fmt]();
+  else{const d=$('#delim').value;outputs=flavor==='kumu'?toKumu(m,d,$('#keepId').checked,warn):toGephi(m,d,warn)}
+  msgs.innerHTML=warn.map(w=>`<p class="msg warn">${esc(w)}</p>`).join('');
+  outputs.forEach((f,i)=>{
+    const d=document.createElement('div');d.className='file';
+    d.innerHTML=`<div class="hd"><b>${esc(f.name)}</b><span class="row" style="margin:0"><button data-dl="${i}">Download</button><button class="sec" data-cp="${i}">Copy</button></span></div><textarea readonly rows="9" spellcheck="false" aria-label="${esc(f.name)}"></textarea>`;
+    d.querySelector('textarea').value=f.text;outs.appendChild(d);
+  });
+  $('#allRow').hidden=outputs.length<2;
+}
+$('#outs').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.dl!=null)download(outputs[b.dataset.dl]);
+  if(b.dataset.cp!=null)navigator.clipboard.writeText(outputs[b.dataset.cp].text).then(()=>{const t=b.textContent;b.textContent='Copied';setTimeout(()=>b.textContent=t,1200)}).catch(()=>{});
+});
+$('#dlAll').onclick=()=>outputs.forEach((f,i)=>setTimeout(()=>download(f),i*400));
+async function loadFiles(files){for(const f of files)ingest(await f.text(),f.name);refresh()}
+const drop=$('#drop');
+drop.onclick=()=>$('#file').click();
+drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#file').click()}};
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};
+drop.ondragleave=()=>drop.classList.remove('over');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');loadFiles(e.dataTransfer.files)};
+$('#file').onchange=e=>{loadFiles(e.target.files);e.target.value=''};
+$('#addPaste').onclick=()=>{ingest($('#paste').value,'pasted');refresh()};
+$('#sample').onclick=()=>{ingest(SAMPLE,'sample.graphml');refresh()};
+$('#clear').onclick=()=>{S.xml=S.nodes=S.edges=null;$('#paste').value='';refresh()};
+['fmt','flavor','delim','keepId'].forEach(id=>$('#'+id).addEventListener('change',render));
+/* ---------- transform ---------- */
+let base=null,buildErr='',cur=null,tinfo='';
+function refresh(){buildErr='';base=null;try{base=build()}catch(e){buildErr=e.message}fillTransform();update()}
+function update(){cur=base?applyTransform(base):null;render();graphLoad(cur)}
+function fillTransform(){
+  const a=$('#tfAttr'),c=$('#vColor'),pa=a.value,pc=c.value;
+  const keys=base?[...new Set(base.nodes.flatMap(n=>Object.keys(n.attrs)))]:[];
+  a.innerHTML=keys.map(k=>`<option>${esc(k)}</option>`).join('');
+  if(keys.includes(pa))a.value=pa;
+  c.innerHTML='<option value="">Color by: none</option>'+keys.map(k=>`<option>${esc(k)}</option>`).join('');
+  c.value=keys.includes(pc)?pc:(keys.find(k=>/type|kind|class|categ|role/i.test(k))||'');
+  fillVals();
+}
+function fillVals(){
+  const k=$('#tfAttr').value,c=new Map();
+  if(base&&k)for(const n of base.nodes){const v=n.attrs[k];if(v)c.set(v,(c.get(v)||0)+1)}
+  $('#tfVals').innerHTML=[...c].map(([v,n])=>`<option value="${esc(v)}">${esc(v)} (${n})</option>`).join('');
+}
+function applyTransform(m){
+  tinfo='';
+  const k=$('#tfAttr').value,vals=[...$('#tfVals').selectedOptions].map(o=>o.value);
+  if(!$('#tfOn').checked||!k||!vals.length)return m;
+  const via=$('#tfVia').checked;let edges=m.edges.slice(),rem=0,add=0;
+  for(const n of m.nodes){
+    const v=n.attrs[k];if(!vals.includes(v))continue;
+    const inc=[],keep=[];
+    for(const e of edges)(e.source===n.id||e.target===n.id)?inc.push(e):keep.push(e);
+    const it=inc.filter(e=>e.source!==e.target).map(e=>{const out=e.source===n.id;
+      return{nb:out?e.target:e.source,canIn:!out||!e.directed,canOut:out||!e.directed,und:!e.directed}});
+    const made=[];
+    it.forEach((a,i)=>it.forEach((b,j)=>{
+      if(i===j||a.nb===b.nb||!a.canIn||!b.canOut)return;
+      if(a.und&&b.und&&i>j)return;
+      made.push({source:a.nb,target:b.nb,directed:!(a.und&&b.und),label:'',weight:'',attrs:{relation:v,...(via?{via:n.label}:{})}});
+    }));
+    edges=keep.concat(made);rem++;add+=made.length;
+  }
+  tinfo=`${rem} node${rem===1?'':'s'} replaced by ${add} new edge${add===1?'':'s'}`;
+  return{nodes:m.nodes.filter(n=>!vals.includes(n.attrs[k])),edges};
+}
+$('#tfOn').onchange=()=>{$('#tfBody').hidden=!$('#tfOn').checked;update()};
+$('#tfAttr').onchange=()=>{fillVals();update()};
+$('#tfVals').onchange=()=>update();
+$('#tfVia').onchange=()=>update();
+
+/* ---------- graph preview (ForceAtlas2-style layout) ---------- */
+const PAL=['#0f6b66','#d1495b','#edae49','#3d5a80','#8e5572','#6a994e','#e07a5f','#00798c','#9c6644','#7d8597','#b5179e','#2a9d8f'];
+const V={nodes:[],edges:[],run:false,iter:0,max:1000,gs:1,fit:true,tx:0,ty:0,k:1,hover:null,drag:null,pan:null,raf:0};
+const cv=$('#cv'),ctx=cv.getContext('2d');
+const rad=n=>4+2.2*Math.sqrt(n.deg);
+function graphLoad(m){
+  const old=new Map(V.nodes.map(n=>[n.id,n])),idx=new Map(),N=m?m.nodes.length:0,r=Math.sqrt(N)*25+10;
+  V.nodes=[];V.edges=[];
+  if(m){
+    for(const n of m.nodes){const o=old.get(n.id);
+      const v={id:n.id,label:n.label,attrs:n.attrs,x:o?o.x:(Math.random()-.5)*r,y:o?o.y:(Math.random()-.5)*r,fx:0,fy:0,px:0,py:0,deg:0,swing:0};
+      idx.set(n.id,v);V.nodes.push(v)}
+    for(const e of m.edges){const a=idx.get(e.source),b=idx.get(e.target);if(a&&b&&a!==b){V.edges.push({a,b,d:e.directed});a.deg++;b.deg++}}
+  }
+  V.max=N<300?1200:N<1000?600:300;V.iter=old.size?V.max-250:0;V.gs=1;V.fit=true;V.run=N>1;
+  setRun();recolor();
+}
+function setRun(){$('#vRun').textContent=V.run?'Pause layout':'Resume layout'}
+function recolor(){
+  const k=$('#vColor').value,map=new Map();
+  for(const n of V.nodes){const v=k?(n.attrs[k]||'(none)'):'';if(k&&!map.has(v))map.set(v,PAL[map.size%PAL.length]);n.col=k?map.get(v):null}
+  $('#legend').innerHTML=k?[...map].map(([v,c])=>`<span><i style="background:${c}"></i>${esc(v)}</span>`).join(''):'';
+  need();
+}
+function step(){
+  const N=V.nodes;if(N.length<2)return;
+  for(const n of N){n.fx=0;n.fy=0}
+  for(let i=0;i<N.length;i++){const a=N[i];for(let j=i+1;j<N.length;j++){const b=N[j];
+    let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
+    if(d2<.01){dx=Math.random()-.5;dy=Math.random()-.5;d2=dx*dx+dy*dy+.01}
+    const f=12*(a.deg+1)*(b.deg+1)/d2;a.fx+=dx*f;a.fy+=dy*f;b.fx-=dx*f;b.fy-=dy*f}}
+  for(const e of V.edges){const dx=e.b.x-e.a.x,dy=e.b.y-e.a.y;e.a.fx+=dx;e.a.fy+=dy;e.b.fx-=dx;e.b.fy-=dy}
+  let sw=0,tr=0;
+  for(const n of N){const d=Math.hypot(n.x,n.y)||1,f=(n.deg+1)/d;n.fx-=n.x*f;n.fy-=n.y*f;
+    const m=n.deg+1;n.swing=m*Math.hypot(n.fx-n.px,n.fy-n.py);sw+=n.swing;tr+=m*Math.hypot(n.fx+n.px,n.fy+n.py)/2}
+  V.gs=Math.max(Math.min(tr/(sw||1),V.gs*1.5),.01);
+  for(const n of N){
+    if(!n.pinned){const f=Math.hypot(n.fx,n.fy)||1e-9;
+      const s=Math.min(.1*V.gs/(1+V.gs*Math.sqrt(n.swing)),10/f);n.x+=n.fx*s;n.y+=n.fy*s}
+    n.px=n.fx;n.py=n.fy}
+}
+function fit(w,h){
+  let a=1e9,b=1e9,c=-1e9,d=-1e9;
+  for(const n of V.nodes){a=Math.min(a,n.x);c=Math.max(c,n.x);b=Math.min(b,n.y);d=Math.max(d,n.y)}
+  const k=Math.min((w-100)/((c-a)||1),(h-80)/((d-b)||1),3);
+  V.k=k;V.tx=w/2-(a+c)/2*k;V.ty=h/2-(b+d)/2*k;
+}
+function draw(){
+  const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const cs=getComputedStyle(document.documentElement),g=n=>cs.getPropertyValue(n).trim(),ink=g('--ink'),mute=g('--mute'),acc=g('--acc');
+  if(!V.nodes.length){ctx.fillStyle=mute;ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('Load a graph to see it here.',w/2,h/2);return}
+  if(V.fit)fit(w,h);
+  const X=n=>n.x*V.k+V.tx,Y=n=>n.y*V.k+V.ty;
+  ctx.lineWidth=1;ctx.strokeStyle=mute;ctx.fillStyle=mute;ctx.globalAlpha=.55;
+  for(const e of V.edges){
+    const x1=X(e.a),y1=Y(e.a),x2=X(e.b),y2=Y(e.b);
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    if(e.d){const L=Math.hypot(x2-x1,y2-y1)||1,ux=(x2-x1)/L,uy=(y2-y1)/L,r=rad(e.b)+1,tx=x2-ux*r,ty=y2-uy*r;
+      ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(tx-ux*8+uy*3.5,ty-uy*8-ux*3.5);ctx.lineTo(tx-ux*8-uy*3.5,ty-uy*8+ux*3.5);ctx.fill()}
+  }
+  ctx.globalAlpha=1;
+  for(const n of V.nodes){ctx.beginPath();ctx.arc(X(n),Y(n),rad(n),0,7);ctx.fillStyle=n.col||acc;ctx.fill();
+    if(n===V.hover){ctx.lineWidth=2;ctx.strokeStyle=ink;ctx.stroke();ctx.lineWidth=1}}
+  const lab=$('#vLab').checked&&V.nodes.length<=250;
+  ctx.font='12px "Source Sans 3","Segoe UI",sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle=ink;
+  for(const n of V.nodes)if(lab||n===V.hover)ctx.fillText(n.label,X(n)+rad(n)+3,Y(n));
+}
+function need(){if(!V.raf)V.raf=requestAnimationFrame(tick)}
+function tick(){
+  V.raf=0;
+  if(V.run){const n=V.nodes.length,s=n<200?4:n<600?2:1;for(let i=0;i<s;i++){step();V.iter++}
+    if(V.iter>=V.max){V.run=false;setRun()}}
+  draw();if(V.run)need();
+}
+const pt=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
+const hit=(x,y)=>{for(let i=V.nodes.length-1;i>=0;i--){const n=V.nodes[i],dx=n.x*V.k+V.tx-x,dy=n.y*V.k+V.ty-y;if(dx*dx+dy*dy<=(rad(n)+3)**2)return n}return null};
+cv.onpointerdown=e=>{const[x,y]=pt(e),n=hit(x,y);V.fit=false;cv.setPointerCapture(e.pointerId);
+  if(n){V.drag=n;n.pinned=1}else V.pan={x,y,tx:V.tx,ty:V.ty};need()};
+cv.onpointermove=e=>{const[x,y]=pt(e);
+  if(V.drag){V.drag.x=(x-V.tx)/V.k;V.drag.y=(y-V.ty)/V.k}
+  else if(V.pan){V.tx=V.pan.tx+x-V.pan.x;V.ty=V.pan.ty+y-V.pan.y}
+  else{const h=hit(x,y);if(h!==V.hover){V.hover=h;cv.style.cursor=h?'pointer':'grab'}}
+  need()};
+cv.onpointerup=()=>{if(V.drag){V.drag.pinned=0;if(!V.run){V.run=true;V.iter=Math.max(0,V.max-150);setRun()}}V.drag=V.pan=null;need()};
+cv.addEventListener('wheel',e=>{e.preventDefault();V.fit=false;const[x,y]=pt(e),f=Math.exp(-e.deltaY*.0015);
+  V.tx=x-(x-V.tx)*f;V.ty=y-(y-V.ty)*f;V.k*=f;need()},{passive:false});
+$('#vRun').onclick=()=>{V.run=!V.run;if(V.run&&V.iter>=V.max)V.iter=V.max-300;setRun();need()};
+$('#vReset').onclick=()=>{const r=Math.sqrt(V.nodes.length)*25+10;for(const n of V.nodes){n.x=(Math.random()-.5)*r;n.y=(Math.random()-.5)*r;n.px=n.py=0}
+  V.iter=0;V.gs=1;V.fit=true;V.run=V.nodes.length>1;setRun();need()};
+$('#vLab').onchange=need;$('#vColor').onchange=recolor;
+window.addEventListener('resize',need);
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',need);
+
+refresh();
+
+/* ---------- load from URL: ?file=...&file=...&format=...&style=... ---------- */
+(async()=>{
+  const q=new URLSearchParams(location.search),f=q.get('format'),st=q.get('style'),urls=q.getAll('file');
+  if(f&&[...$('#fmt').options].some(o=>o.value===f))$('#fmt').value=f;
+  if(st==='kumu'||st==='gephi')$('#flavor').value=st;
+  if(!urls.length){render();return}
+  $('#loaded').textContent='Loading '+urls.length+' file(s) from URL…';
+  const errs=[];
+  for(const u of urls){
+    try{
+      const r=await fetch(u);if(!r.ok)throw Error('HTTP '+r.status);
+      ingest(await r.text(),decodeURIComponent(new URL(u,location.href).pathname.split('/').pop())||'graph');
+    }catch(e){errs.push(`Could not load ${u} (${e.message}). The server must allow cross-origin requests (CORS), and browsers usually block local files when this page is opened from disk.`)}
+  }
+  refresh();
+  $('#msgs').insertAdjacentHTML('beforeend',errs.map(e=>`<p class="msg err">${esc(e)}</p>`).join(''));
+})();
+</script>
+</body>
+</html>
