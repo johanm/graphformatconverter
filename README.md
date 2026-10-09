@@ -44,8 +44,14 @@ Gephi reserves `Type` for Directed/Undirected, so a connection type (for example
 Replace all nodes of a chosen type with edges between their neighbours:
 
 1. Pick the node attribute that holds the type, then one or more values.
-2. Each removed node is bypassed: every incoming neighbour is linked to every outgoing neighbour (undirected neighbours are linked pairwise).
+2. Choose how neighbours are connected:
+   - **Connect all neighbours** (default): every pair of neighbours of a removed node is linked by an undirected edge, whatever the original directions. Removing the posts from a `user -> post` "liked" graph links users who liked the same post.
+   - **Follow edge direction**: an incoming neighbour is linked to an outgoing one (A -> X -> B becomes A -> B). A node with only incoming or only outgoing edges creates no new edges in this mode.
 3. New edges get a `relation` attribute with the removed type, and optionally `via` with the removed node's label. In Kumu output, `relation` becomes the connection `Type`.
+
+### Remove individual nodes
+
+Click a node in the graph preview and choose **Remove node**. The node and its edges are deleted from the graph and from the exported files. Removed nodes are listed in the Transform section, where each one can be restored (with its edges), or all at once. Manual removals are applied first, then the type transform above. Loading a new file clears the list.
 
 ## Load from a URL
 
@@ -81,5 +87,4 @@ Two small GraphML files in this repo, each with two node types (`Person` and `Pr
 **[`example-people-projects-mentoring.graphml`](https://johanm.github.io/graphformatconverter/graphformatconverter.html?file=example-people-projects-mentoring.graphml)** is the same graph plus one person-to-person edge (Alice mentors Eve), so it is not bipartite.
 - Remove `Project`: the same collaboration network, with the mentoring edge kept as-is.
 - Remove `Person`: the mentoring link chains through Alice and Eve and also links Apollo to Cedar, so the three projects form a triangle.
-
 

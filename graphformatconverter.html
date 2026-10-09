@@ -36,7 +36,16 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,.drop:focus-vis
 .file .hd{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .file .hd b{font:600 14px ui-monospace,Consolas,monospace;word-break:break-all}
 .hint{font-size:12.5px;color:var(--mute);margin:6px 0 0}
-canvas{display:block;width:100%;height:480px;background:var(--code);border:1px solid var(--line);border-radius:4px;touch-action:none;cursor:grab;margin-top:10px}
+canvas{display:block;width:100%;height:480px;background:var(--code);border:1px solid var(--line);border-radius:4px;touch-action:none;cursor:grab}
+.cvwrap{position:relative;margin-top:10px}
+#nodeMenu{position:absolute;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.25);font-size:13px;min-width:150px}
+#nodeMenu .mh{font-weight:600;max-width:240px;overflow-wrap:anywhere}
+#nodeMenu small{display:block;color:var(--mute);margin-bottom:8px}
+.rmbox{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.rmbox .hd2{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#rmList{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:4px;padding:3px 4px 3px 10px;background:var(--code)}
+.chip small{color:var(--mute)}.chip button{padding:2px 8px;font-size:13px}
 #legend{display:flex;gap:4px 14px;flex-wrap:wrap;font-size:13px;margin-top:8px}
 #legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
 .sec-gap{margin-top:16px}
@@ -99,8 +108,18 @@ canvas{display:block;width:100%;height:480px;background:var(--code);border:1px s
       <div><label for="tfAttr">Node attribute that holds the type</label><select id="tfAttr"></select></div>
       <div><label for="tfVals">Types to replace (select one or more)</label><select id="tfVals" multiple size="5"></select></div>
     </div>
+    <label for="tfMode">How to connect the neighbours of a replaced node</label>
+    <select id="tfMode">
+      <option value="all" selected>Connect all neighbours with each other (undirected)</option>
+      <option value="flow">Follow edge direction (incoming neighbour to outgoing neighbour)</option>
+    </select>
     <label class="chk"><input type="checkbox" id="tfVia" checked> Record the removed node's label in a "via" attribute on each new edge</label>
-    <p class="hint">Each removed node is replaced by edges between its neighbours: every incoming neighbour is linked to every outgoing neighbour, and undirected neighbours are linked pairwise. New edges get a "relation" attribute holding the removed type (Kumu output writes it into the connection Type column). Nodes without attributes cannot be selected.</p>
+    <p class="hint"><b>Connect all neighbours</b> links every pair of neighbours of a replaced node, whatever the edge directions (for example, users who liked the same post become linked). <b>Follow edge direction</b> only links an incoming neighbour to an outgoing one, so a node that has only incoming or only outgoing edges produces no new edges. New edges get a "relation" attribute holding the removed type (Kumu output writes it into the connection Type column). Nodes without attributes cannot be selected.</p>
+  </div>
+  <div class="rmbox">
+    <div class="hd2"><b>Removed nodes <span id="rmCount"></span></b><button class="sec" id="rmAll" hidden>Restore all</button></div>
+    <ul id="rmList"></ul>
+    <p class="hint">Click a node in the graph preview and choose Remove. This deletes the node and its edges (it does not connect its neighbours; use the type transform above for that). Manual removals are applied first, then the type transform. Restore a node here to bring it back with its edges.</p>
   </div>
 </section>
 
@@ -111,9 +130,9 @@ canvas{display:block;width:100%;height:480px;background:var(--code);border:1px s
     <label class="chk" style="margin:0"><input type="checkbox" id="vLab" checked> Labels</label>
     <select id="vColor" aria-label="Color nodes by"></select>
   </div>
-  <canvas id="cv" aria-label="Graph preview"></canvas>
+  <div class="cvwrap"><canvas id="cv" aria-label="Graph preview"></canvas><div id="nodeMenu" hidden></div></div>
   <div id="legend"></div>
-  <p class="hint">ForceAtlas2-style layout, run live. Scroll to zoom, drag the background to pan, drag a node to move it. Layout cost grows quickly above about 1,500 nodes.</p>
+  <p class="hint">ForceAtlas2-style layout, run live. Scroll to zoom, drag the background to pan, drag a node to move it, click a node to remove it. Layout cost grows quickly above about 1,500 nodes.</p>
 </section>
 
 <div id="stats"></div>
@@ -540,8 +559,28 @@ $('#clear').onclick=()=>{S.xml=S.nodes=S.edges=null;$('#paste').value='';refresh
 ['fmt','flavor','delim','keepId'].forEach(id=>$('#'+id).addEventListener('change',render));
 /* ---------- transform ---------- */
 let base=null,buildErr='',cur=null,tinfo='';
-function refresh(){buildErr='';base=null;try{base=build()}catch(e){buildErr=e.message}fillTransform();update()}
-function update(){cur=base?applyTransform(base):null;render();graphLoad(cur)}
+const removedIds=new Set();
+function refresh(){buildErr='';base=null;removedIds.clear();V.nodes=[];V.mem.clear();V.fit=true;try{base=build()}catch(e){buildErr=e.message}fillTransform();update()}
+function update(){
+  if(base){cur=applyTransform(applyRemoved(base));const n=removedIds.size;
+    if(n)tinfo=[`${n} node${n===1?'':'s'} removed`,tinfo].filter(Boolean).join('; ')}
+  else{cur=null;tinfo=''}
+  renderRemoved();render();graphLoad(cur);
+}
+function applyRemoved(m){
+  if(!removedIds.size)return m;
+  return{nodes:m.nodes.filter(n=>!removedIds.has(n.id)),edges:m.edges.filter(e=>!removedIds.has(e.source)&&!removedIds.has(e.target))};
+}
+function renderRemoved(){
+  const l=base?base.nodes.filter(n=>removedIds.has(n.id)):[];
+  $('#rmCount').textContent=l.length?`(${l.length})`:'';
+  $('#rmAll').hidden=!l.length;
+  $('#rmList').innerHTML=l.length?l.map(n=>`<li class="chip"><span>${esc(n.label)}${n.label!==n.id?` <small>${esc(n.id)}</small>`:''}</span><button class="sec" data-restore="${esc(n.id)}">Restore</button></li>`).join(''):'<li class="hint" style="margin:0">None.</li>';
+}
+function removeNode(id){removedIds.add(id);update();fillVals()}
+function restoreNode(id){removedIds.delete(id);update();fillVals()}
+$('#rmList').onclick=e=>{const b=e.target.closest('button');if(b)restoreNode(b.dataset.restore)};
+$('#rmAll').onclick=()=>{removedIds.clear();update();fillVals()};
 function fillTransform(){
   const a=$('#tfAttr'),c=$('#vColor'),pa=a.value,pc=c.value;
   const keys=base?[...new Set(base.nodes.flatMap(n=>Object.keys(n.attrs)))]:[];
@@ -549,29 +588,32 @@ function fillTransform(){
   if(keys.includes(pa))a.value=pa;
   c.innerHTML='<option value="">Color by: none</option>'+keys.map(k=>`<option>${esc(k)}</option>`).join('');
   c.value=keys.includes(pc)?pc:(keys.find(k=>/type|kind|class|categ|role/i.test(k))||'');
-  fillVals();
+  $('#tfVals').innerHTML='';fillVals();
 }
 function fillVals(){
-  const k=$('#tfAttr').value,c=new Map();
-  if(base&&k)for(const n of base.nodes){const v=n.attrs[k];if(v)c.set(v,(c.get(v)||0)+1)}
-  $('#tfVals').innerHTML=[...c].map(([v,n])=>`<option value="${esc(v)}">${esc(v)} (${n})</option>`).join('');
+  const k=$('#tfAttr').value,c=new Map(),sel=new Set([...$('#tfVals').selectedOptions].map(o=>o.value));
+  if(base&&k)for(const n of base.nodes){if(removedIds.has(n.id))continue;const v=n.attrs[k];if(v)c.set(v,(c.get(v)||0)+1)}
+  $('#tfVals').innerHTML=[...c].map(([v,n])=>`<option value="${esc(v)}"${sel.has(v)?' selected':''}>${esc(v)} (${n})</option>`).join('');
 }
 function applyTransform(m){
   tinfo='';
   const k=$('#tfAttr').value,vals=[...$('#tfVals').selectedOptions].map(o=>o.value);
   if(!$('#tfOn').checked||!k||!vals.length)return m;
-  const via=$('#tfVia').checked;let edges=m.edges.slice(),rem=0,add=0;
+  const via=$('#tfVia').checked,all=$('#tfMode').value==='all';let edges=m.edges.slice(),rem=0,add=0;
   for(const n of m.nodes){
     const v=n.attrs[k];if(!vals.includes(v))continue;
     const inc=[],keep=[];
     for(const e of edges)(e.source===n.id||e.target===n.id)?inc.push(e):keep.push(e);
     const it=inc.filter(e=>e.source!==e.target).map(e=>{const out=e.source===n.id;
       return{nb:out?e.target:e.source,canIn:!out||!e.directed,canOut:out||!e.directed,und:!e.directed}});
-    const made=[];
+    const made=[],seen=new Set();
     it.forEach((a,i)=>it.forEach((b,j)=>{
-      if(i===j||a.nb===b.nb||!a.canIn||!b.canOut)return;
-      if(a.und&&b.und&&i>j)return;
-      made.push({source:a.nb,target:b.nb,directed:!(a.und&&b.und),label:'',weight:'',attrs:{relation:v,...(via?{via:n.label}:{})}});
+      if(i===j||a.nb===b.nb)return;
+      if(all){if(i>j)return}
+      else{if(!a.canIn||!b.canOut)return;if(a.und&&b.und&&i>j)return}
+      const sym=all||(a.und&&b.und),key=JSON.stringify(sym?[a.nb,b.nb].sort():[a.nb,b.nb]);
+      if(seen.has(key))return;seen.add(key); // one edge per neighbour pair and replaced node
+      made.push({source:a.nb,target:b.nb,directed:!sym,label:'',weight:'',attrs:{relation:v,...(via?{via:n.label}:{})}});
     }));
     edges=keep.concat(made);rem++;add+=made.length;
   }
@@ -579,25 +621,27 @@ function applyTransform(m){
   return{nodes:m.nodes.filter(n=>!vals.includes(n.attrs[k])),edges};
 }
 $('#tfOn').onchange=()=>{$('#tfBody').hidden=!$('#tfOn').checked;update()};
-$('#tfAttr').onchange=()=>{fillVals();update()};
+$('#tfAttr').onchange=()=>{$('#tfVals').innerHTML='';fillVals();update()};
 $('#tfVals').onchange=()=>update();
 $('#tfVia').onchange=()=>update();
+$('#tfMode').onchange=()=>update();
 
 /* ---------- graph preview (ForceAtlas2-style layout) ---------- */
 const PAL=['#0f6b66','#d1495b','#edae49','#3d5a80','#8e5572','#6a994e','#e07a5f','#00798c','#9c6644','#7d8597','#b5179e','#2a9d8f'];
-const V={nodes:[],edges:[],run:false,iter:0,max:1000,gs:1,fit:true,tx:0,ty:0,k:1,hover:null,drag:null,pan:null,raf:0};
+const V={nodes:[],edges:[],run:false,iter:0,max:1000,gs:1,fit:true,tx:0,ty:0,k:1,hover:null,drag:null,pan:null,raf:0,down:null,mem:new Map(),menuNode:null};
 const cv=$('#cv'),ctx=cv.getContext('2d');
 const rad=n=>4+2.2*Math.sqrt(n.deg);
 function graphLoad(m){
+  hideMenu();for(const n of V.nodes)V.mem.set(n.id,n);
   const old=new Map(V.nodes.map(n=>[n.id,n])),idx=new Map(),N=m?m.nodes.length:0,r=Math.sqrt(N)*25+10;
   V.nodes=[];V.edges=[];
   if(m){
-    for(const n of m.nodes){const o=old.get(n.id);
+    for(const n of m.nodes){const o=old.get(n.id)||V.mem.get(n.id);
       const v={id:n.id,label:n.label,attrs:n.attrs,x:o?o.x:(Math.random()-.5)*r,y:o?o.y:(Math.random()-.5)*r,fx:0,fy:0,px:0,py:0,deg:0,swing:0};
       idx.set(n.id,v);V.nodes.push(v)}
     for(const e of m.edges){const a=idx.get(e.source),b=idx.get(e.target);if(a&&b&&a!==b){V.edges.push({a,b,d:e.directed});a.deg++;b.deg++}}
   }
-  V.max=N<300?1200:N<1000?600:300;V.iter=old.size?V.max-250:0;V.gs=1;V.fit=true;V.run=N>1;
+  V.max=N<300?1200:N<1000?600:300;V.iter=old.size?V.max-250:0;V.gs=1;V.fit=old.size?V.fit:true;V.run=N>1;
   setRun();recolor();
 }
 function setRun(){$('#vRun').textContent=V.run?'Pause layout':'Resume layout'}
@@ -661,15 +705,33 @@ function tick(){
 }
 const pt=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
 const hit=(x,y)=>{for(let i=V.nodes.length-1;i>=0;i--){const n=V.nodes[i],dx=n.x*V.k+V.tx-x,dy=n.y*V.k+V.ty-y;if(dx*dx+dy*dy<=(rad(n)+3)**2)return n}return null};
-cv.onpointerdown=e=>{const[x,y]=pt(e),n=hit(x,y);V.fit=false;cv.setPointerCapture(e.pointerId);
+cv.onpointerdown=e=>{const[x,y]=pt(e),n=hit(x,y);cv.setPointerCapture(e.pointerId);V.down={x,y,n};
   if(n){V.drag=n;n.pinned=1}else V.pan={x,y,tx:V.tx,ty:V.ty};need()};
-cv.onpointermove=e=>{const[x,y]=pt(e);
-  if(V.drag){V.drag.x=(x-V.tx)/V.k;V.drag.y=(y-V.ty)/V.k}
-  else if(V.pan){V.tx=V.pan.tx+x-V.pan.x;V.ty=V.pan.ty+y-V.pan.y}
+cv.onpointermove=e=>{const[x,y]=pt(e),d=V.down;
+  if(d&&Math.hypot(x-d.x,y-d.y)>4)d.moved=true;
+  if(V.drag){if(d&&d.moved){V.fit=false;V.drag.x=(x-V.tx)/V.k;V.drag.y=(y-V.ty)/V.k}}
+  else if(V.pan){if(d&&d.moved){V.fit=false;V.tx=V.pan.tx+x-V.pan.x;V.ty=V.pan.ty+y-V.pan.y}}
   else{const h=hit(x,y);if(h!==V.hover){V.hover=h;cv.style.cursor=h?'pointer':'grab'}}
   need()};
-cv.onpointerup=()=>{if(V.drag){V.drag.pinned=0;if(!V.run){V.run=true;V.iter=Math.max(0,V.max-150);setRun()}}V.drag=V.pan=null;need()};
-cv.addEventListener('wheel',e=>{e.preventDefault();V.fit=false;const[x,y]=pt(e),f=Math.exp(-e.deltaY*.0015);
+cv.onpointerup=e=>{const d=V.down;
+  if(V.drag){V.drag.pinned=0;if(d&&d.moved&&!V.run){V.run=true;V.iter=Math.max(0,V.max-150);setRun()}}
+  if(d&&d.n&&!d.moved){const[x,y]=pt(e);openMenu(d.n,x,y)}
+  V.drag=V.pan=V.down=null;need()};
+cv.onpointercancel=()=>{if(V.drag)V.drag.pinned=0;V.drag=V.pan=V.down=null};
+const menu=$('#nodeMenu');
+function hideMenu(){menu.hidden=true;V.menuNode=null}
+function openMenu(n,x,y){
+  V.menuNode=n;
+  menu.innerHTML=`<div class="mh">${esc(n.label)}</div><small>${n.deg} connection${n.deg===1?'':'s'}</small><button id="mRemove">Remove node</button>`;
+  menu.hidden=false;
+  menu.style.left=Math.max(4,Math.min(x+12,cv.clientWidth-menu.offsetWidth-4))+'px';
+  menu.style.top=Math.max(4,Math.min(y+12,cv.clientHeight-menu.offsetHeight-4))+'px';
+  $('#mRemove').focus();
+}
+menu.addEventListener('click',e=>{if(e.target.id==='mRemove'&&V.menuNode){const id=V.menuNode.id;hideMenu();removeNode(id)}});
+document.addEventListener('pointerdown',e=>{if(!menu.hidden&&!menu.contains(e.target))hideMenu()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideMenu()});
+cv.addEventListener('wheel',e=>{e.preventDefault();hideMenu();V.fit=false;const[x,y]=pt(e),f=Math.exp(-e.deltaY*.0015);
   V.tx=x-(x-V.tx)*f;V.ty=y-(y-V.ty)*f;V.k*=f;need()},{passive:false});
 $('#vRun').onclick=()=>{V.run=!V.run;if(V.run&&V.iter>=V.max)V.iter=V.max-300;setRun();need()};
 $('#vReset').onclick=()=>{const r=Math.sqrt(V.nodes.length)*25+10;for(const n of V.nodes){n.x=(Math.random()-.5)*r;n.y=(Math.random()-.5)*r;n.px=n.py=0}
